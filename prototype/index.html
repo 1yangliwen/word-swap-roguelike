@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>词·换 — Word Swap Roguelike 原型</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-container">
+        <header id="game-header">
+            <h1>词 · 换</h1>
+            <div id="header-right">
+                <div id="gold-display">💰 <span id="gold-value">0</span></div>
+                <div id="pressure-bar">
+                    <span class="pressure-label">墨渍</span>
+                    <div class="pressure-track"><div class="pressure-fill"></div></div>
+                    <span class="pressure-value">0/20</span>
+                </div>
+                <div id="swap-counter">笔力：<span id="swap-count">5</span></div>
+            </div>
+        </header>
+
+        <section id="summary-area" class="text-area" style="display:none;">
+            <div class="area-label">上一场总结</div>
+            <p id="summary-text"></p>
+        </section>
+
+        <section id="environment-area" class="text-area">
+            <div class="area-label">环境</div>
+            <p id="environment-text"></p>
+        </section>
+
+        <section id="battle-area" class="text-area">
+            <div class="area-label">战斗</div>
+            <p id="battle-text"></p>
+        </section>
+
+        <section id="reward-area" class="text-area" style="display:none;">
+            <div class="area-label">战利品</div>
+            <p id="reward-text"></p>
+            <div class="reward-actions">
+                <button onclick="collectReward()">收取战利品，进入下一场</button>
+            </div>
+        </section>
+
+        <section id="status-area">
+            <div id="player-status">
+                <span class="status-label">你：</span>
+                <span class="hp-bar">❤️ <span id="player-hp" class="token token-number"></span></span>
+                <span class="equip">⚔️ <span id="player-weapon-adj" class="token token-adjective"></span><span id="player-weapon-noun">铁剑</span></span>
+            </div>
+            <div id="enemy-status">
+                <span class="status-label">敌人：</span>
+                <span class="hp-bar">💀 <span id="enemy-hp" class="token token-number"></span></span>
+                <span id="enemy-intent" class="intent-display"></span>
+            </div>
+        </section>
+
+        <!-- Buff/Debuff effect bar -->
+        <section id="effects-bar"></section>
+
+        <!-- Skill bar -->
+        <section id="skill-area" style="display:none;">
+            <div id="mana-display">
+                <span class="mana-icon">✦</span>
+                <span class="mana-label">法力</span>
+                <span id="mana-value">0</span>/<span id="mana-max">10</span>
+                <span class="mana-regen">(+<span id="mana-regen">3</span>/回合)</span>
+            </div>
+            <div id="skill-slots">
+                <!-- Skill buttons are rendered dynamically -->
+            </div>
+        </section>
+
+        <section id="action-area">
+            <div id="mode-buttons">
+                <button id="btn-mode-delete" class="mode-btn" onclick="toggleMode('delete')">✕ 删除</button>
+            </div>
+            <button id="btn-end-turn" onclick="endTurn()">结束回合</button>
+            <button id="btn-inventory" onclick="toggleInventory()">📦 词块库 (<span id="inv-count">0</span>)</button>
+        </section>
+
+        <!-- Inventory overlay -->
+        <div id="inventory-overlay" style="display:none;">
+            <div id="inventory-panel">
+                <h2>词块库</h2>
+                <p class="inv-hint">选中一个词块，再点击句子中同类型的词块即可交换（被替换的词会回到库中）。也可填入空槽。</p>
+                <div id="inventory-grid"></div>
+                <button class="inv-close-btn" onclick="toggleInventory()">关闭</button>
+            </div>
+        </div>
+
+        <section id="log-area">
+            <div class="area-label">战斗日志</div>
+            <div id="battle-log"></div>
+        </section>
+
+        <!-- Fullscreen banner for combos/events -->
+        <div id="banner-overlay"></div>
+
+        <!-- Map overlay -->
+        <div id="map-overlay" style="display:none;">
+            <div id="map-panel">
+                <h2>选择路线</h2>
+                <div id="map-container"></div>
+            </div>
+        </div>
+
+        <!-- Event overlay -->
+        <div id="event-overlay" style="display:none;">
+            <div id="event-panel">
+                <h2 id="event-title"></h2>
+                <p id="event-description"></p>
+                <div id="event-choices"></div>
+            </div>
+        </div>
+
+        <!-- Reward overlay (post-battle) -->
+        <div id="reward-overlay" style="display:none;">
+            <div id="reward-panel">
+                <h2 id="reward-title">战斗胜利</h2>
+                <div id="reward-basic"></div>
+                <div id="reward-choices"></div>
+                <button id="reward-continue" onclick="completeReward()">继续前进</button>
+            </div>
+        </div>
+
+        <div id="game-over" style="display:none;">
+            <h2 id="game-over-title"></h2>
+            <p id="game-over-text"></p>
+            <button onclick="startGame()">再来一局</button>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>
