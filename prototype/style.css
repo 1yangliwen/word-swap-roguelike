@@ -1,302 +1,659 @@
+/* ============================================================
+   词·换 — 羊皮卷 / 黑暗奇幻魔法书 视觉系统
+   设计原则：克制的配色（做旧米黄 + 棕褐墨迹 + 金褐点缀），
+   纸张质感，统一的 design tokens。HTML/JS 的 class 全部保留。
+   ============================================================ */
+
+:root {
+    /* ---- 纸张 / 底色 ---- */
+    --paper-1: #ede0c4;    /* 最亮的羊皮纸 */
+    --paper-2: #e3d3ad;    /* 主纸面 */
+    --paper-3: #d8c191;    /* 略深纸面（凹陷区） */
+    --paper-edge: #c9ab78; /* 纸张边缘 / 描边 */
+    --paper-dark: #b89a64; /* 深色羊皮 */
+
+    /* ---- 墨水 / 文字 ---- */
+    --ink: #3a2b1a;        /* 主墨色（棕黑） */
+    --ink-soft: #5c4a33;   /* 次级文字 */
+    --ink-faint: #6a5535;  /* 弱化文字 / 标签（调深达 AA 4.5 对比度） */
+
+    /* ---- 主题强调色（克制，只用四种）---- */
+    --gold: #a87b32;       /* 金褐 — 主强调（笔力、胜利、稀有） */
+    --gold-bright: #c89b46;
+    --crimson: #8c3b2e;    /* 朱砂红 — 伤害 / 危险 / 敌人 */
+    --teal: #3f6b63;       /* 靛青 — 治疗 / 防御 / 信息 */
+    --plum: #6a4a5c;       /* 暗梅 — 控制 / 异常状态 */
+
+    /* ---- 词块类型色（拉开 subject/noun 色相，色盲更易区分）---- */
+    --tok-number:  #8c3b2e;  /* 数字 — 朱砂 */
+    --tok-adj:     #a87b32;  /* 形容词 — 金褐 */
+    --tok-subject: #7a3a5c;  /* 主语 — 偏紫的暗梅（拉开与 noun 的距离）*/
+    --tok-noun:    #2f6b6b;  /* 名词 — 偏青的靛（拉开与 subject 的距离）*/
+
+    /* ---- 几何 ---- */
+    --radius-sm: 3px;
+    --radius:    6px;
+    --radius-lg: 10px;
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+
+    /* ---- 字号模度（6 档，收敛散落的 17 个硬编码值）---- */
+    --fs-display: 28px;  /* 标题 */
+    --fs-h2:      21px;  /* 面板大标题 */
+    --fs-body:    17px;  /* 正文/状态 */
+    --fs-small:   14px;  /* 次级 */
+    --fs-caption: 12px;  /* 标注 */
+    --fs-micro:   11px;  /* 微注 */
+
+    /* ---- 阴影 / 质感 ---- */
+    --shadow-soft: 0 2px 6px rgba(58, 43, 26, 0.18);
+    --shadow-card: 0 4px 14px rgba(58, 43, 26, 0.22), inset 0 1px 0 rgba(255, 248, 230, 0.4);
+    --shadow-inset: inset 0 2px 5px rgba(58, 43, 26, 0.25);
+    --overlay-bg: rgba(26, 19, 12, 0.82);
+
+    /* ---- Motion tokens ---- */
+    /* 缓动曲线：克制细腻的核心。绝不用默认 ease。 */
+    --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);      /* 主用：快出慢停，自然减速 */
+    --ease-in-out: cubic-bezier(0.45, 0, 0.2, 1);       /* 过场：两端柔和 */
+    --ease-soft-back: cubic-bezier(0.34, 1.2, 0.64, 1); /* 极轻回弹（overshoot 很小，克制） */
+    --ease-gentle: cubic-bezier(0.4, 0, 0.1, 1);        /* 浮层出场：沉稳 */
+
+    /* 时长：快反馈 / 标准 / 舒缓过场，三档拉开节奏 */
+    --dur-fast: 110ms;    /* 即时反馈：hover、按下 */
+    --dur-base: 220ms;    /* 标准过渡 */
+    --dur-slow: 380ms;    /* 浮层、过场 */
+    --dur-banner: 2200ms; /* 横幅整段 */
+}
+
+/* 尊重系统“减弱动态效果”无障碍设置 */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
 * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
+}
+
+/* 仅交互元素禁选（拖拽/点击需要），正文恢复可选中复制 */
+.token, .map-node, .skill-btn, .mode-btn, .resource-item,
+.log-header, .relic-icon, .inv-token, .reward-card, .event-choice-btn {
     user-select: none;
 }
 
+/* 背景：深色木桌 / 暗室，让羊皮卷浮在上面。
+   叠极淡木纹噪点 + 中心烛光 vignette，暗区自然隐去而非硬黑留白。 */
 body {
-    background: #1a1a2e;
-    color: #e0e0e0;
+    background:
+        radial-gradient(ellipse at 50% 35%, rgba(120, 90, 50, 0.18) 0%, transparent 45%), /* 烛光晕 */
+        radial-gradient(ellipse at 50% 0%, #3a2e22 0%, #241b12 60%, #1a130c 100%),
+        repeating-linear-gradient(92deg, rgba(70, 50, 30, 0.04) 0px, rgba(70, 50, 30, 0.04) 2px, transparent 2px, transparent 7px); /* 极淡木纹 */
+    background-attachment: fixed;
+    color: var(--ink);
     font-family: "LXGW WenKai", "Noto Serif SC", "Source Han Serif CN", serif;
     min-height: 100vh;
     display: flex;
     justify-content: center;
     align-items: flex-start;
-    padding: 20px;
+    padding: 24px 20px 40px;
 }
 
+/* 主容器 = 一张展开的羊皮卷 */
 #game-container {
-    max-width: 800px;
+    max-width: 820px;
     width: 100%;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: var(--space-4);
     position: relative;
+    padding: 28px 32px 32px;
+    border-radius: var(--radius-lg);
+    background:
+        radial-gradient(circle at 18% 12%, rgba(168, 123, 50, 0.10) 0%, transparent 35%),
+        radial-gradient(circle at 85% 78%, rgba(140, 59, 46, 0.08) 0%, transparent 40%),
+        radial-gradient(circle at 70% 20%, rgba(0, 0, 0, 0.05) 0%, transparent 30%),
+        linear-gradient(160deg, var(--paper-1) 0%, var(--paper-2) 55%, var(--paper-3) 100%);
+    box-shadow:
+        0 18px 50px rgba(0, 0, 0, 0.55),
+        inset 0 0 60px rgba(120, 90, 50, 0.25),
+        inset 0 1px 0 rgba(255, 250, 235, 0.5);
+    border: 1px solid var(--paper-dark);
 }
+
+/* 留白分组：叙事层(narrative-card)与下方状态/操作层之间留更大呼吸，
+   让玩家靠间距感知"现在该看哪里"。 */
+#narrative-area {
+    margin-bottom: var(--space-5);
+}
+/* relics 紧贴资源条下方，与下方叙事拉开一点 */
+#relic-bar {
+    margin-bottom: var(--space-2);
+}
+
+/* 卷边的暗角，增强"老纸"感 */
+#game-container::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: var(--radius-lg);
+    pointer-events: none;
+    box-shadow: inset 0 0 40px rgba(70, 50, 25, 0.35);
+}
+
+/* ============================================ */
+/* HEADER                                       */
+/* ============================================ */
 
 #game-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 12px 0;
-    border-bottom: 1px solid #333;
+    padding: 4px 0 14px;
+    border-bottom: 2px solid var(--paper-edge);
+    position: relative;
+}
+
+#game-header::after {
+    content: "";
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
 }
 
 #game-header h1 {
-    font-size: 24px;
-    color: #f0c040;
-    letter-spacing: 8px;
+    font-size: 28px;
+    color: var(--ink);
+    letter-spacing: 0.35em;  /* 相对值，随字号缩放，窄屏不致过开 */
+    font-weight: bold;
+    text-shadow: 0 1px 0 rgba(255, 248, 230, 0.6);
 }
 
 #header-right {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: var(--space-4);
 }
 
 #gold-display {
     font-size: 16px;
-    color: #f0c040;
+    color: var(--gold);
     font-weight: bold;
 }
 
 #swap-counter {
     font-size: 18px;
-    color: #80c0ff;
+    color: var(--ink-soft);
 }
 
 #swap-count {
     font-weight: bold;
     font-size: 22px;
+    color: var(--gold);
 }
 
-/* Pressure bar */
+/* 墨渍压力条 */
 #pressure-bar {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-2);
     font-size: 13px;
 }
 
 .pressure-label {
-    color: #a060c0;
+    color: var(--plum);
     font-weight: bold;
 }
 
 .pressure-track {
     width: 80px;
-    height: 8px;
-    background: #1a1a2e;
-    border: 1px solid #4a2a6e;
-    border-radius: 4px;
+    height: 9px;
+    background: var(--paper-3);
+    border: 1px solid var(--paper-dark);
+    border-radius: 5px;
     overflow: hidden;
+    box-shadow: var(--shadow-inset);
 }
 
 .pressure-fill {
     height: 100%;
     width: 0%;
-    background: linear-gradient(90deg, #6a2a9e, #c040c0, #ff40a0);
-    border-radius: 3px;
+    background: linear-gradient(90deg, #6a4a5c, #8c3b2e);
+    border-radius: 4px;
     transition: width 0.4s ease;
 }
 
 .pressure-value {
-    color: #c080e0;
+    color: var(--plum);
     font-size: 12px;
     min-width: 36px;
-}
-
-/* Text areas */
-.text-area {
-    background: #16213e;
-    border: 1px solid #2a3a5e;
-    border-radius: 8px;
-    padding: 16px;
-    position: relative;
-}
-
-.area-label {
-    position: absolute;
-    top: -10px;
-    left: 12px;
-    background: #16213e;
-    padding: 0 8px;
-    font-size: 12px;
-    color: #666;
-}
-
-.text-area p {
-    font-size: 18px;
-    line-height: 2.2;
-    min-height: 36px;
-}
-
-/* Token base */
-.token {
-    padding: 3px 8px;
-    border-radius: 4px;
-    cursor: grab;
-    transition: transform 0.15s ease, filter 0.15s ease, box-shadow 0.15s ease;
-    display: inline-block;
-    margin: 0 2px;
-    position: relative;
     font-weight: bold;
 }
 
+/* ============================================ */
+/* 文本区标签（.area-label 仍被 log-header 复用） */
+/* ============================================ */
+
+.area-label {
+    position: absolute;
+    top: -11px;
+    left: var(--space-3);
+    background: var(--paper-2);
+    padding: 1px var(--space-2);
+    font-size: 12px;
+    color: var(--ink-faint);
+    letter-spacing: 2px;
+    border: 1px solid var(--paper-edge);
+    border-radius: var(--radius-sm);
+}
+
+/* ============================================ */
+/* 词块 token                                    */
+/* ============================================ */
+
+.token {
+    padding: 3px 9px;
+    border-radius: var(--radius-sm);
+    cursor: grab;
+    /* 克制：只动 transform/shadow/border-color，曲线统一 */
+    transition: transform var(--dur-fast) var(--ease-out),
+                box-shadow var(--dur-fast) var(--ease-out),
+                border-color var(--dur-fast) var(--ease-out),
+                background-color var(--dur-base) var(--ease-out);
+    display: inline-block;
+    margin: 0 4px;
+    position: relative;
+    font-weight: bold;
+    border: 1px solid;
+    box-shadow: 0 1px 2px rgba(58, 43, 26, 0.15);
+    /* 为动画做准备 */
+    will-change: transform;
+    transform: translateY(0) scale(1);
+}
+
+/* hover：轻微上浮 + 描边加深 + 微妙的底色变亮 */
 .token:hover {
-    transform: scale(1.08);
-    filter: brightness(1.2);
+    transform: translateY(-2px) scale(1.02);
+    box-shadow: 0 4px 10px rgba(58, 43, 26, 0.25);
+    border-color: var(--gold);
 }
 
+/* 按下：下沉 + 内阴影，真实的"被按住"反馈 */
 .token:active {
+    transform: translateY(0.5px) scale(0.98);
+    box-shadow: inset 0 1px 3px rgba(58, 43, 26, 0.3);
     cursor: grabbing;
+    transition-duration: 50ms;
 }
 
-/* Token types */
+/* 词块类型：靠墨色 + 下划线样式双重区分（色盲安全，符合 GDD"颜色/下划线区分"）*/
 .token-number {
-    background: rgba(100, 200, 255, 0.15);
-    border: 1px solid rgba(100, 200, 255, 0.4);
-    color: #80d4ff;
+    background: rgba(140, 59, 46, 0.14);
+    border-color: rgba(140, 59, 46, 0.45);
+    color: var(--tok-number);
+    border-bottom: 2px solid var(--tok-number); /* 数字：粗实线 */
 }
 
 .token-adjective {
-    background: rgba(255, 180, 100, 0.15);
-    border: 1px solid rgba(255, 180, 100, 0.4);
-    color: #ffb060;
+    background: rgba(168, 123, 50, 0.16);
+    border-color: rgba(168, 123, 50, 0.5);
+    color: var(--tok-adj);
+    border-bottom: 2px dotted var(--tok-adj); /* 形容词：点线 */
 }
 
 .token-subject {
-    background: rgba(180, 100, 255, 0.15);
-    border: 1px solid rgba(180, 100, 255, 0.4);
-    color: #c080ff;
+    background: rgba(122, 58, 92, 0.15);
+    border-color: rgba(122, 58, 92, 0.5);
+    color: var(--tok-subject);
+    border-bottom: 3px double var(--tok-subject); /* 主语：双线 */
 }
 
 .token-noun {
-    background: rgba(100, 255, 150, 0.15);
-    border: 1px solid rgba(100, 255, 150, 0.4);
-    color: #80ff90;
+    background: rgba(47, 107, 107, 0.15);
+    border-color: rgba(47, 107, 107, 0.5);
+    color: var(--tok-noun);
+    border-bottom: 2px wavy var(--tok-noun); /* 名词：波浪线 */
 }
 
-/* Locked tokens */
+/* 锁定词块 — 像被封印的旧印 */
 .token-locked {
-    opacity: 0.4;
+    opacity: 0.45;
     cursor: not-allowed !important;
     border-style: dashed;
-    filter: grayscale(0.6);
+    filter: grayscale(0.7) sepia(0.3);
 }
 
 .token-locked:hover {
     transform: none;
-    filter: grayscale(0.6);
+    filter: grayscale(0.7) sepia(0.3);
 }
 
-/* Dragging states */
+/* 键盘聚焦可见态（Tab 聚焦词块时） */
+.token:focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 2px;
+    z-index: 5;
+}
+
+/* 键盘选中态（Enter 选中的源词块） */
+.token.keyboard-selected {
+    outline: 2px solid var(--gold);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 3px rgba(168, 123, 50, 0.3), 0 4px 12px rgba(58, 43, 26, 0.3) !important;
+    z-index: 5;
+}
+
+/* 首回合一次性引导脉冲：让玩家发现"这些字可以拖"。
+   staggered 出现后消退，不持续播放。 */
+@keyframes token-intro {
+    0%   { box-shadow: 0 1px 2px rgba(58, 43, 26, 0.15); border-color: inherit; }
+    40%  { box-shadow: 0 0 0 2px rgba(168, 123, 50, 0.5), 0 3px 8px rgba(168, 123, 50, 0.3); border-color: var(--gold); }
+    100% { box-shadow: 0 1px 2px rgba(58, 43, 26, 0.15); border-color: inherit; }
+}
+.token.intro-pulse {
+    animation: token-intro 900ms var(--ease-soft-back);
+}
+
+/* 移动端无 hover：可拖词块常驻极轻边框，作为"可交互"信号 */
+@media (hover: none) {
+    .token {
+        border-width: 1.5px;
+    }
+    .token[data-token-id][style*="grab"] {
+        border-color: rgba(168, 123, 50, 0.45);
+    }
+}
+
+/* 拖拽状态 — 源词块淡出并缩小，留下"空位"的视觉暗示 */
 .dragging-source {
-    opacity: 0.3;
-    transform: scale(0.95);
+    opacity: 0.25;
+    transform: scale(0.92);
+    filter: grayscale(0.4);
+    transition: all var(--dur-fast) var(--ease-out);
 }
 
+/* 拖拽克隆体 — 浮起、带金色光晕，跟随鼠标 */
 .drag-clone {
     position: fixed;
     pointer-events: none;
     z-index: 1000;
-    transform: translate(-50%, -50%) scale(1.2);
-    box-shadow: 0 4px 20px rgba(255, 255, 100, 0.4);
-    border-color: #ffff60 !important;
-    opacity: 0.9;
+    transform: translate(-50%, -50%) scale(1.15) rotate(-1deg);
+    box-shadow:
+        0 8px 28px rgba(168, 123, 50, 0.5),
+        0 2px 8px rgba(0, 0, 0, 0.3);
+    border-color: var(--gold) !important;
+    opacity: 0.97;
+    animation: drag-float 1.6s var(--ease-in-out) infinite;
 }
 
-/* Compatible targets */
+/* 拖拽中的微妙浮动呼吸 */
+@keyframes drag-float {
+    0%, 100% { transform: translate(-50%, -50%) scale(1.15) rotate(-1deg); }
+    50%      { transform: translate(-50%, -50%) scale(1.18) rotate(0.5deg); }
+}
+
+/* 可交换目标 — 墨迹渗透 + 轻微上浮，邀请玩家放置 */
 .compatible {
-    animation: pulse 0.8s ease-in-out infinite;
+    animation: ink-mark 1.4s var(--ease-in-out) infinite;
     border-style: dashed;
+    transform: translateY(-1px);
 }
 
-@keyframes pulse {
-    0%, 100% { box-shadow: 0 0 4px rgba(255, 255, 100, 0.2); }
-    50% { box-shadow: 0 0 14px rgba(255, 255, 100, 0.6); }
+@keyframes ink-mark {
+    0%, 100% {
+        border-color: rgba(168, 123, 50, 0.4);
+        background-color: rgba(168, 123, 50, 0.03);
+        transform: translateY(-1px) scale(1);
+    }
+    50% {
+        border-color: rgba(168, 123, 50, 0.9);
+        background-color: rgba(168, 123, 50, 0.12);
+        transform: translateY(-2px) scale(1.03);
+    }
 }
 
-/* Drop target highlight */
+/* 放置目标（悬停在上方时）— 明确的"可以放这里"反馈 */
 .drag-over {
-    transform: scale(1.15);
-    box-shadow: 0 0 16px rgba(255, 255, 100, 0.8);
-    border-color: #ffff60;
-    background: rgba(255, 255, 100, 0.2) !important;
+    transform: scale(1.08) translateY(-2px);
+    box-shadow:
+        0 0 0 2px var(--gold),
+        0 6px 16px rgba(168, 123, 50, 0.35);
+    border-color: var(--gold) !important;
+    background: rgba(168, 123, 50, 0.18) !important;
+    transition: all var(--dur-fast) var(--ease-soft-back);
 }
 
-/* Flyback clone — B's value flying to A's original position */
-.flyback-clone {
+/* ---- 交换飞行动画 ---- */
+
+/* 飞行克隆体 A（从源飞向目标）*/
+.swap-fly-a {
     position: fixed;
     pointer-events: none;
-    z-index: 999;
-    transform: translate(-50%, -50%) scale(1.1);
-    transition: left 0.3s cubic-bezier(0.2, 0.8, 0.3, 1.2),
-                top 0.3s cubic-bezier(0.2, 0.8, 0.3, 1.2);
-    box-shadow: 0 4px 16px rgba(255, 255, 100, 0.5);
-    border-color: #ffff60 !important;
+    z-index: 1001;
     opacity: 0.95;
+    box-shadow: 0 6px 20px rgba(168, 123, 50, 0.5);
+    border-color: var(--gold) !important;
+    transition: none;
+    will-change: transform, left, top;
 }
 
-/* Landing flash — applied after swap completes */
+/* 飞行克隆体 B（从目标飞向源）*/
+.swap-fly-b {
+    position: fixed;
+    pointer-events: none;
+    z-index: 1000;
+    opacity: 0.92;
+    box-shadow: 0 4px 14px rgba(58, 43, 26, 0.4);
+    border-color: var(--gold-bright) !important;
+    transition: none;
+    will-change: transform, left, top;
+}
+
+/* 落地弹跳 — 有重量感的着陆（收敛时长，连续交换不拖沓）*/
 .swap-landed {
-    animation: swap-land 0.4s ease;
+    animation: swap-land 280ms var(--ease-soft-back);
 }
 
 @keyframes swap-land {
-    0% { transform: scale(1.3); box-shadow: 0 0 20px rgba(255, 255, 100, 0.8); }
-    50% { transform: scale(0.95); }
-    100% { transform: scale(1); box-shadow: none; }
+    0%   { transform: scale(1.18) translateY(-4px); opacity: 0.7; }
+    40%  { transform: scale(0.94) translateY(1px); opacity: 1; }
+    70%  { transform: scale(1.04) translateY(-1px); }
+    100% { transform: scale(1) translateY(0); }
+}
+
+/* 落地时的墨水涟漪 */
+.swap-ripple {
+    position: absolute;
+    pointer-events: none;
+    border-radius: 50%;
+    border: 1.5px solid var(--gold);
+    opacity: 0;
+    animation: ripple-out 350ms var(--ease-out) forwards;
+}
+
+@keyframes ripple-out {
+    0%   { transform: scale(0.3); opacity: 0.7; }
+    100% { transform: scale(2.5); opacity: 0; }
+}
+
+/* 墨水粒子 */
+.ink-particle {
+    position: fixed;
+    pointer-events: none;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--gold);
+    opacity: 0.8;
+    z-index: 1002;
+    animation: particle-burst 350ms var(--ease-out) forwards;
+}
+
+@keyframes particle-burst {
+    0%   { transform: translate(0, 0) scale(1); opacity: 0.9; }
+    100% { transform: translate(var(--px), var(--py)) scale(0); opacity: 0; }
 }
 
 /* ============================================ */
-/* FLOATING DAMAGE NUMBERS                      */
+/* 浮动伤害数字                                   */
 /* ============================================ */
 
 .float-number {
-    position: absolute;
-    font-size: 16px;
+    position: fixed;     /* 挂 body 用 viewport 坐标，震屏时不跟着抖 */
+    font-size: 20px;
     font-weight: bold;
     pointer-events: none;
-    z-index: 50;
-    animation: float-up 0.9s ease-out forwards;
-    text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+    z-index: 60;
+    animation: float-up 1.2s var(--ease-out) forwards;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    font-variant-numeric: tabular-nums;
 }
 
 .float-number.damage {
-    color: #ff4040;
+    color: var(--crimson);
+    font-size: 24px;
+    animation-name: float-up-damage;
 }
-
 .float-number.heal {
-    color: #40ff80;
+    color: var(--teal);
+    animation-name: float-up-heal;
 }
 
+/* 伤害数字：先放大冲击，再上浮消散 */
+@keyframes float-up-damage {
+    0%   { opacity: 0; transform: translateY(6px) scale(0.5); }
+    12%  { opacity: 1; transform: translateY(-2px) scale(1.4); }
+    28%  { opacity: 1; transform: translateY(-6px) scale(1); }
+    75%  { opacity: 0.9; transform: translateY(-28px) scale(0.95); }
+    100% { opacity: 0; transform: translateY(-40px) scale(0.8); }
+}
+
+/* 治疗数字：柔和上浮 */
+@keyframes float-up-heal {
+    0%   { opacity: 0; transform: translateY(4px) scale(0.9); }
+    15%  { opacity: 1; transform: translateY(0) scale(1.1); }
+    70%  { opacity: 0.9; transform: translateY(-24px); }
+    100% { opacity: 0; transform: translateY(-36px); }
+}
+
+/* 通用浮动（兼容旧调用） */
 @keyframes float-up {
-    0% { opacity: 1; transform: translateY(0) scale(1.2); }
-    70% { opacity: 1; transform: translateY(-24px) scale(1); }
-    100% { opacity: 0; transform: translateY(-36px) scale(0.8); }
+    0%   { opacity: 0; transform: translateY(4px) scale(0.9); }
+    15%  { opacity: 1; transform: translateY(0) scale(1.1); }
+    70%  { opacity: 0.9; transform: translateY(-24px); }
+    100% { opacity: 0; transform: translateY(-36px); }
 }
 
-/* Low HP flash */
+/* 血量告急：放慢节奏、去掉发光，改成墨色明暗的缓慢心跳，沉重而不刺眼 */
 .hp-critical {
-    animation: hp-flash 0.6s ease-in-out infinite;
+    animation: hp-flash 1.4s var(--ease-in-out) infinite;
 }
 
 @keyframes hp-flash {
-    0%, 100% { color: #ff4040; }
-    50% { color: #ff8080; text-shadow: 0 0 8px rgba(255, 60, 60, 0.8); }
+    0%, 100% { color: var(--crimson); opacity: 1; }
+    50%      { color: #b85040; opacity: 0.72; }
 }
 
 /* ============================================ */
-/* SCREEN SHAKE                                 */
+/* 震屏                                          */
 /* ============================================ */
 
+/* 震屏 — 快速衰减的多轴抖动，有冲击力但不晕 */
 .screen-shake {
-    animation: shake 0.4s ease;
+    animation: shake 0.4s var(--ease-out);
 }
 
 @keyframes shake {
-    0%, 100% { transform: translateX(0); }
-    15% { transform: translateX(-4px) rotate(-0.5deg); }
-    30% { transform: translateX(4px) rotate(0.5deg); }
-    45% { transform: translateX(-3px); }
-    60% { transform: translateX(3px); }
-    75% { transform: translateX(-1px); }
+    0%   { transform: translate(0, 0); }
+    15%  { transform: translate(-3px, 1px); }
+    30%  { transform: translate(3px, -1px); }
+    45%  { transform: translate(-2px, 0.5px); }
+    60%  { transform: translate(2px, -0.5px); }
+    75%  { transform: translate(-1px, 0); }
+    90%  { transform: translate(0.5px, 0); }
+    100% { transform: translate(0, 0); }
+}
+
+/* 重击震屏 — 更强烈的版本 */
+.screen-shake-heavy {
+    animation: shake-heavy 0.5s var(--ease-out);
+}
+
+@keyframes shake-heavy {
+    0%   { transform: translate(0, 0) scale(1); }
+    10%  { transform: translate(-5px, 2px) scale(0.995); }
+    25%  { transform: translate(5px, -2px) scale(1.003); }
+    40%  { transform: translate(-3px, 1px) scale(1); }
+    55%  { transform: translate(3px, -1px); }
+    70%  { transform: translate(-1.5px, 0.5px); }
+    85%  { transform: translate(1px, 0); }
+    100% { transform: translate(0, 0) scale(1); }
+}
+
+/* 敌人攻击预备动作 — 向后蓄力 */
+.enemy-windup {
+    animation: enemy-windup 300ms var(--ease-in-out);
+}
+
+@keyframes enemy-windup {
+    0%   { transform: translateX(0); }
+    60%  { transform: translateX(6px) scale(1.02); }
+    100% { transform: translateX(0); }
+}
+
+/* 敌人攻击冲刺 */
+.enemy-strike {
+    animation: enemy-strike 200ms var(--ease-out);
+}
+
+@keyframes enemy-strike {
+    0%   { transform: translateX(0); }
+    40%  { transform: translateX(-12px) scale(1.05); }
+    100% { transform: translateX(0) scale(1); }
+}
+
+/* 玩家受击闪烁 */
+.player-hit {
+    animation: player-hit 400ms var(--ease-out);
+}
+
+@keyframes player-hit {
+    0%   { filter: brightness(1); }
+    15%  { filter: brightness(1.8) saturate(0.5); }
+    30%  { filter: brightness(0.8); }
+    50%  { filter: brightness(1.2); }
+    100% { filter: brightness(1); }
+}
+
+/* 血条平滑变化 */
+.hp-animate {
+    transition: color 300ms var(--ease-out);
+}
+
+/* 数值变化时的脉冲 */
+.value-pulse {
+    animation: value-pulse 350ms var(--ease-soft-back);
+}
+
+@keyframes value-pulse {
+    0%   { transform: scale(1); }
+    35%  { transform: scale(1.25); }
+    70%  { transform: scale(0.95); }
+    100% { transform: scale(1); }
 }
 
 /* ============================================ */
-/* FULLSCREEN BANNER                            */
+/* 全屏横幅                                       */
 /* ============================================ */
 
 #banner-overlay {
@@ -312,167 +669,186 @@ body {
     z-index: 80;
 }
 
-.banner-text {
-    font-size: 28px;
-    font-weight: bold;
-    padding: 16px 40px;
-    border-radius: 8px;
-    animation: banner-in 1.4s ease forwards;
-    text-shadow: 0 2px 8px rgba(0,0,0,0.6);
-    white-space: nowrap;
+/* 背景轻轻压暗渐入渐出，让横幅从沉静中浮起——有当只点有 banner-text 时才生效 */
+#banner-overlay:has(.banner-text)::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at center, rgba(40, 28, 16, 0.32), rgba(40, 28, 16, 0.12) 60%, transparent 80%);
+    animation: banner-veil var(--dur-banner) var(--ease-gentle) forwards;
 }
 
-.banner-combo {
-    background: rgba(255, 80, 255, 0.15);
-    border: 2px solid rgba(255, 80, 255, 0.6);
-    color: #ff80ff;
-}
-
-.banner-reversal {
-    background: rgba(180, 100, 255, 0.15);
-    border: 2px solid rgba(180, 100, 255, 0.6);
-    color: #c080ff;
-}
-
-.banner-victory {
-    background: rgba(240, 192, 64, 0.15);
-    border: 2px solid rgba(240, 192, 64, 0.6);
-    color: #f0c040;
-}
-
-.banner-defeat {
-    background: rgba(255, 60, 60, 0.15);
-    border: 2px solid rgba(255, 60, 60, 0.6);
-    color: #ff6060;
-}
-
-.banner-defend {
-    background: rgba(100, 200, 255, 0.15);
-    border: 2px solid rgba(100, 200, 255, 0.6);
-    color: #80c0ff;
-}
-
-.banner-lock {
-    background: rgba(180, 100, 255, 0.15);
-    border: 2px solid rgba(180, 100, 255, 0.6);
-    color: #c080ff;
-}
-
-.banner-buff {
-    background: rgba(255, 180, 100, 0.15);
-    border: 2px solid rgba(255, 180, 100, 0.6);
-    color: #ffb060;
-}
-
-.banner-cleanse {
-    background: rgba(100, 255, 150, 0.15);
-    border: 2px solid rgba(100, 255, 150, 0.6);
-    color: #80ff90;
-}
-
-.banner-pressure {
-    background: rgba(160, 60, 200, 0.2);
-    border: 2px solid rgba(160, 60, 200, 0.7);
-    color: #c060e0;
-}
-
-@keyframes banner-in {
-    0% { opacity: 0; transform: scale(0.6); }
-    15% { opacity: 1; transform: scale(1.1); }
-    25% { transform: scale(1); }
-    75% { opacity: 1; transform: scale(1); }
-    100% { opacity: 0; transform: scale(0.9) translateY(-10px); }
+@keyframes banner-veil {
+    0%   { opacity: 0; }
+    14%  { opacity: 1; }
+    78%  { opacity: 1; }
+    100% { opacity: 0; }
 }
 
 /* ============================================ */
-/* EFFECTS BAR (buff/debuff indicators)         */
+/* 弹层通用入场（背景淡入 + 面板从下浮起）          */
+/* 每次 display:none→flex 都会重新播放，细腻不打断   */
+/* ============================================ */
+@keyframes overlay-fade {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+@keyframes panel-rise {
+    0%   { opacity: 0; transform: translateY(14px) scale(0.985); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.banner-text {
+    position: relative;
+    font-size: 30px;
+    font-weight: bold;
+    padding: 16px 44px;
+    border-radius: var(--radius);
+    animation: banner-in var(--dur-banner) var(--ease-gentle) forwards;
+    text-shadow: 0 1px 0 rgba(255, 250, 235, 0.5);
+    /* 去 nowrap：允许换行，限制宽度，窄屏不溢出视口 */
+    white-space: normal;
+    text-align: center;
+    max-width: 90vw;
+    word-break: keep-all;
+    background: var(--paper-1);
+    border: 2px solid var(--paper-dark);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.32);
+}
+
+.banner-combo    { color: var(--plum);    border-color: var(--plum); }
+.banner-reversal { color: var(--plum);    border-color: var(--plum); }
+.banner-victory  { color: var(--gold);    border-color: var(--gold); }
+.banner-defeat   { color: var(--crimson); border-color: var(--crimson); }
+.banner-defend   { color: var(--teal);    border-color: var(--teal); }
+.banner-lock     { color: var(--plum);    border-color: var(--plum); }
+.banner-buff     { color: var(--gold);    border-color: var(--gold); }
+.banner-cleanse  { color: var(--teal);    border-color: var(--teal); }
+.banner-pressure { color: var(--plum);    border-color: var(--plum); }
+
+/* 克制优雅：从下方微微浮起渐显，退场时轻轻上飘渐隐，不再弹跳不再突出 */
+@keyframes banner-in {
+    0%   { opacity: 0; transform: translateY(10px) scale(0.985); letter-spacing: 0.12em; }
+    12%  { opacity: 1; transform: translateY(0) scale(1); letter-spacing: normal; }
+    72%  { opacity: 1; transform: translateY(0) scale(1); }
+    100% { opacity: 0; transform: translateY(-8px) scale(0.99); }
+}
+
+/* ============================================ */
+/* 效果标签（buff/debuff）                        */
 /* ============================================ */
 
 #effects-bar {
     display: flex;
-    gap: 8px;
+    gap: var(--space-2);
     min-height: 28px;
     flex-wrap: wrap;
 }
 
 .effect-tag {
-    padding: 4px 10px;
+    padding: 4px 11px;
     border-radius: 12px;
     font-size: 13px;
     font-weight: bold;
-    animation: effect-in 0.3s ease;
+    animation: effect-in var(--dur-base) var(--ease-soft-back);
     display: inline-flex;
     align-items: center;
     gap: 4px;
+    border: 1px solid;
+    box-shadow: var(--shadow-soft);
 }
 
 .effect-tag.burn {
-    background: rgba(255, 100, 40, 0.2);
-    border: 1px solid rgba(255, 100, 40, 0.5);
-    color: #ff8040;
+    background: rgba(140, 59, 46, 0.16);
+    border-color: rgba(140, 59, 46, 0.5);
+    color: var(--crimson);
 }
 
 .effect-tag.frozen {
-    background: rgba(100, 200, 255, 0.2);
-    border: 1px solid rgba(100, 200, 255, 0.5);
-    color: #80d4ff;
+    background: rgba(63, 107, 99, 0.16);
+    border-color: rgba(63, 107, 99, 0.5);
+    color: var(--teal);
 }
 
 .effect-tag.poison {
-    background: rgba(100, 255, 100, 0.2);
-    border: 1px solid rgba(100, 255, 100, 0.5);
-    color: #80ff80;
+    background: rgba(106, 74, 92, 0.16);
+    border-color: rgba(106, 74, 92, 0.5);
+    color: var(--plum);
 }
 
+/* 作用于敌人的减益（弱点暴露）—— 金褐，与"我方危险"的朱砂 burn 区分 */
+.effect-tag.vulnerable {
+    background: rgba(168, 123, 50, 0.16);
+    border-color: rgba(168, 123, 50, 0.5);
+    color: var(--gold);
+    border-style: dashed;
+}
+
+/* 玩家增益（格挡）—— 靛青实线，与"敌方冻结"的 frozen 视觉区分 */
+.effect-tag.shield {
+    background: rgba(63, 107, 99, 0.10);
+    border-color: rgba(63, 107, 99, 0.7);
+    color: var(--teal);
+    border-style: solid;
+    border-width: 1.5px;
+}
+
+/* 效果标签：从一侧轻盈滑入，不再从 0.5 弹出 */
 @keyframes effect-in {
-    0% { opacity: 0; transform: scale(0.5); }
-    100% { opacity: 1; transform: scale(1); }
+    0%   { opacity: 0; transform: translateY(-4px) scale(0.96); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 /* ============================================ */
-/* SWAP COUNT SHAKE (no swaps left)             */
+/* 笔力不足震动                                   */
 /* ============================================ */
 
 .swap-count-shake {
-    animation: count-shake 0.5s ease;
-    color: #ff4040 !important;
+    animation: count-shake 0.36s var(--ease-out);
+    color: var(--crimson) !important;
 }
 
+/* 笔力不足：幅度收小的衰减抖动，提示而不刺眼 */
 @keyframes count-shake {
     0%, 100% { transform: translateX(0); }
-    20% { transform: translateX(-3px); }
-    40% { transform: translateX(3px); }
-    60% { transform: translateX(-2px); }
-    80% { transform: translateX(2px); }
+    25%  { transform: translateX(-2px); }
+    50%  { transform: translateX(2px); }
+    75%  { transform: translateX(-1px); }
 }
 
 /* ============================================ */
-/* STATUS AREA                                  */
+/* 状态区                                        */
 /* ============================================ */
-
-#status-area {
-    display: flex;
-    justify-content: space-between;
-    padding: 12px 16px;
-    background: #0f1a30;
-    border-radius: 8px;
-    border: 1px solid #2a3a5e;
-    font-size: 18px;
-    position: relative;
-}
 
 #enemy-status {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-1);
+}
+
+/* 玩家武器名词"铁剑"不可改：用弱化样式明示，避免误以为是可拖词块 */
+.weapon-noun {
+    margin-left: 2px;
+    color: var(--ink-soft);
+    opacity: 0.85;
+}
+
+.status-side .intent-display {
+    margin-left: 0;
 }
 
 .hp-bar, .equip {
-    margin-left: 8px;
+    margin-left: var(--space-2);
+}
+
+.status-label {
+    color: var(--ink-soft);
 }
 
 /* ============================================ */
-/* ENEMY INTENT DISPLAY                         */
+/* 敌人意图                                       */
 /* ============================================ */
 
 .intent-display {
@@ -480,33 +856,54 @@ body {
     align-items: center;
     gap: 4px;
     padding: 3px 10px;
-    border-radius: 6px;
-    border: 1px solid #666;
-    background: rgba(255, 255, 255, 0.05);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--paper-dark);
+    background: rgba(184, 154, 100, 0.18);
     font-size: 14px;
-    animation: intent-appear 0.4s ease;
-    margin-left: 8px;
+    animation: intent-appear var(--dur-base) var(--ease-soft-back);
+    margin-left: var(--space-2);
 }
 
-.intent-icon {
-    font-size: 16px;
-}
+.intent-icon { font-size: 16px; }
 
 .intent-label {
     font-weight: bold;
     font-size: 13px;
+    color: var(--ink-soft);
 }
 
+/* 敌人意图按类型染色（用主题变量，不内联霓虹色） */
+.intent-display[data-type="attack"]  { border-color: rgba(140, 59, 46, 0.5); background: rgba(140, 59, 46, 0.12); }
+.intent-display[data-type="attack"]  .intent-label { color: var(--crimson); }
+.intent-display[data-type="defend"],
+.intent-display[data-type="cleanse"],
+.intent-display[data-type="rest"]    { border-color: rgba(63, 107, 99, 0.5); background: rgba(63, 107, 99, 0.12); }
+.intent-display[data-type="defend"]  .intent-label,
+.intent-display[data-type="cleanse"] .intent-label { color: var(--teal); }
+.intent-display[data-type="buff"]    { border-color: rgba(168, 123, 50, 0.5); background: rgba(168, 123, 50, 0.12); }
+.intent-display[data-type="buff"]    .intent-label { color: var(--gold); }
+.intent-display[data-type="lock"],
+.intent-display[data-type="poison"],
+.intent-display[data-type="seal"]    { border-color: rgba(106, 74, 92, 0.5); background: rgba(106, 74, 92, 0.12); }
+.intent-display[data-type="lock"]    .intent-label,
+.intent-display[data-type="poison"]  .intent-label,
+.intent-display[data-type="seal"]    .intent-label { color: var(--plum); }
+.intent-display[data-type="devour"]  { border-color: rgba(140, 59, 46, 0.5); background: rgba(140, 59, 46, 0.12); }
+.intent-display[data-type="devour"]  .intent-label { color: var(--crimson); }
+
+/* 敌人意图：从右侧轻盈滑入，不再 0.8→1.1 弹跳 */
 @keyframes intent-appear {
-    0% { opacity: 0; transform: scale(0.8); }
-    50% { transform: scale(1.1); }
-    100% { opacity: 1; transform: scale(1); }
+    0%   { opacity: 0; transform: translateX(6px); }
+    100% { opacity: 1; transform: translateX(0); }
 }
 
-/* Action area */
+/* ============================================ */
+/* 操作区                                        */
+/* ============================================ */
+
 #action-area {
     display: flex;
-    gap: 12px;
+    gap: var(--space-3);
     justify-content: center;
     align-items: center;
     flex-wrap: wrap;
@@ -515,287 +912,416 @@ body {
 #mode-buttons {
     display: flex;
     gap: 4px;
-    background: #0f1a30;
-    border-radius: 6px;
+    background: var(--paper-3);
+    border-radius: var(--radius);
     padding: 3px;
-    border: 1px solid #2a3a5e;
+    border: 1px solid var(--paper-edge);
 }
 
 .mode-btn {
     padding: 6px 14px;
     font-size: 14px;
     border: 1px solid transparent;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: transparent;
-    color: #888;
+    color: var(--ink-faint);
     cursor: pointer;
     transition: all 0.2s;
+    font-family: inherit;
 }
 
 .mode-btn:hover {
-    color: #ccc;
-    background: rgba(255, 255, 255, 0.05);
+    color: var(--ink);
+    background: rgba(255, 250, 235, 0.4);
 }
 
 .mode-btn.active {
-    background: #2a2a4e;
-    color: #f0c040;
-    border-color: #f0c040;
+    background: var(--paper-1);
+    color: var(--crimson);
+    border-color: var(--crimson);
     font-weight: bold;
 }
 
+/* 通用按钮 = 蜡封 / 牛皮按钮 */
 #action-area button {
-    padding: 10px 24px;
+    padding: 10px 26px;
     font-size: 16px;
-    border: 1px solid #444;
-    border-radius: 6px;
-    background: #2a2a4e;
-    color: #e0e0e0;
+    border: 1px solid var(--paper-dark);
+    border-radius: var(--radius);
+    background: linear-gradient(180deg, var(--paper-1), var(--paper-3));
+    color: var(--ink);
     cursor: pointer;
-    transition: all 0.2s;
+    /* 不再 transition: all，只动需要的属性，曲线统一 */
+    transition: background var(--dur-base) var(--ease-out),
+                border-color var(--dur-base) var(--ease-out),
+                box-shadow var(--dur-base) var(--ease-out),
+                transform var(--dur-fast) var(--ease-out);
+    font-family: inherit;
+    box-shadow: var(--shadow-card);
 }
 
 #action-area button:hover {
-    background: #3a3a6e;
-    border-color: #666;
+    background: linear-gradient(180deg, #f3e8cf, var(--paper-2));
+    border-color: var(--gold);
+    transform: translateY(-1.5px);
+    box-shadow: 0 4px 10px rgba(58, 43, 26, 0.2);
+}
+
+#action-area button:active {
+    transform: translateY(0);
+    box-shadow: var(--shadow-inset);
 }
 
 #action-area button:disabled {
-    opacity: 0.4;
+    opacity: 0.45;
     cursor: not-allowed;
+    transform: none;
 }
 
 #btn-inventory {
-    border-color: #80c0ff;
-    color: #80c0ff;
+    border-color: var(--teal) !important;
+    color: var(--teal) !important;
 }
 
-/* Delete mode cursor */
+/* 删除模式光标 + hover 红色 —— 排除受保护词块（HP/笔力/名字），它们显示 not-allowed，避免误以为可删 */
 .mode-delete .token {
     cursor: crosshair !important;
 }
 
 .mode-delete .token:hover {
-    box-shadow: 0 0 12px rgba(255, 60, 60, 0.6);
-    border-color: #ff4040;
+    border-color: var(--crimson) !important;
+    background: rgba(140, 59, 46, 0.12) !important;
+    box-shadow: 0 3px 7px rgba(58, 43, 26, 0.22);
 }
 
-/* Insert mode: empty slots glow */
+/* 受保护词块在删除模式下明确"不可删" */
+.mode-delete .token[data-token-id="player-hp"],
+.mode-delete .token[data-token-id="enemy-hp"],
+.mode-delete .token[data-token-id="swap-count"],
+.mode-delete .token[data-token-id="player-name"],
+.mode-delete .token[data-token-id="enemy-name"] {
+    cursor: not-allowed !important;
+    border-color: var(--paper-dark) !important;
+}
+.mode-delete .token[data-token-id="player-hp"]:hover,
+.mode-delete .token[data-token-id="enemy-hp"]:hover,
+.mode-delete .token[data-token-id="swap-count"]:hover,
+.mode-delete .token[data-token-id="player-name"]:hover,
+.mode-delete .token[data-token-id="enemy-name"]:hover {
+    border-color: var(--paper-dark) !important;
+    background: transparent !important;
+    box-shadow: none;
+}
+
+/* 事件/奖励面板的操作提示行 */
+.event-hint, .reward-hint {
+    font-size: var(--fs-caption);
+    color: var(--gold);
+    text-align: center;
+    margin-bottom: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    background: rgba(168, 123, 50, 0.08);
+    border-radius: var(--radius);
+    border: 1px dashed rgba(168, 123, 50, 0.4);
+    line-height: 1.6;
+}
+
+/* 回合结算中：降低词块不透明度、改光标，明示"正在结算" */
+#game-container.resolving .token {
+    opacity: 0.6;
+    cursor: wait !important;
+    pointer-events: none;
+}
+
+/* 奖励卡脉冲引导（金币收取后，提示玩家再选一个奖励） */
+@keyframes reward-card-pulse {
+    0%, 100% { box-shadow: var(--shadow-soft); }
+    50%      { box-shadow: 0 0 0 2px var(--gold), 0 4px 12px rgba(168, 123, 50, 0.35); }
+}
+.reward-card.pulse-hint {
+    animation: reward-card-pulse 1.4s var(--ease-in-out) infinite;
+}
 .token-empty {
     padding: 3px 12px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     display: inline-block;
     margin: 0 2px;
-    border: 1px dashed #555;
-    color: #555;
+    border: 1px dashed var(--paper-dark);
+    color: var(--ink-faint);
     font-size: 14px;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: background var(--dur-base) var(--ease-out),
+                border-color var(--dur-base) var(--ease-out),
+                color var(--dur-base) var(--ease-out);
     min-width: 40px;
     text-align: center;
 }
 
 .mode-insert .token-empty {
-    border-color: #80ff90;
-    color: #80ff90;
-    animation: slot-pulse 1.2s ease-in-out infinite;
+    border-color: var(--teal);
+    color: var(--teal);
+    animation: slot-pulse 1.8s var(--ease-in-out) infinite;
 }
 
 .mode-insert .token-empty:hover {
-    background: rgba(100, 255, 150, 0.15);
-    box-shadow: 0 0 12px rgba(100, 255, 150, 0.5);
+    background: rgba(63, 107, 99, 0.18);
+    border-color: var(--teal);
 }
 
+/* 插入槽脉动：去发光，改成边框与背景的墨色明灭 */
 @keyframes slot-pulse {
-    0%, 100% { box-shadow: 0 0 4px rgba(100, 255, 150, 0.2); }
-    50% { box-shadow: 0 0 10px rgba(100, 255, 150, 0.5); }
+    0%, 100% { border-color: rgba(63, 107, 99, 0.4); background-color: rgba(63, 107, 99, 0.04); }
+    50%      { border-color: rgba(63, 107, 99, 0.8); background-color: rgba(63, 107, 99, 0.12); }
 }
 
-/* Inventory overlay */
+/* ============================================ */
+/* 词块库浮层                                     */
+/* ============================================ */
+
 #inventory-overlay {
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.85);
+    background: var(--overlay-bg);
     display: flex;
     justify-content: center;
     align-items: center;
     z-index: 85;
+    animation: overlay-fade var(--dur-base) var(--ease-out);
 }
 
 #inventory-panel {
-    background: #16213e;
-    border: 1px solid #2a3a5e;
-    border-radius: 12px;
-    padding: 24px 32px;
+    background:
+        radial-gradient(circle at 20% 15%, rgba(168, 123, 50, 0.10) 0%, transparent 40%),
+        linear-gradient(160deg, var(--paper-1), var(--paper-3));
+    border: 1px solid var(--paper-dark);
+    border-radius: var(--radius-lg);
+    padding: var(--space-5) 32px;
     max-width: 500px;
     width: 90%;
     text-align: center;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 250, 235, 0.5);
+    animation: panel-rise var(--dur-slow) var(--ease-gentle);
 }
 
 #inventory-panel h2 {
-    color: #80c0ff;
-    margin-bottom: 8px;
-    font-size: 20px;
+    color: var(--teal);
+    margin-bottom: var(--space-2);
+    font-size: 21px;
+    letter-spacing: 3px;
 }
 
 .inv-hint {
-    color: #888;
+    color: var(--ink-faint);
     font-size: 13px;
-    margin-bottom: 16px;
-    line-height: 1.5;
+    margin-bottom: var(--space-4);
+    line-height: 1.6;
 }
 
 #inventory-grid {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: var(--space-2);
     justify-content: center;
     min-height: 60px;
-    padding: 12px;
-    background: #0f1a30;
-    border-radius: 8px;
-    border: 1px solid #2a3a5e;
-    margin-bottom: 16px;
+    padding: var(--space-3);
+    background: var(--paper-3);
+    border-radius: var(--radius);
+    border: 1px solid var(--paper-edge);
+    box-shadow: var(--shadow-inset);
+    margin-bottom: var(--space-4);
 }
 
 .inv-token {
     padding: 6px 12px;
-    border-radius: 6px;
+    border-radius: var(--radius);
     cursor: pointer;
     font-weight: bold;
     font-size: 15px;
     transition: all 0.2s;
     border: 1px solid;
+    box-shadow: var(--shadow-soft);
 }
 
 .inv-token:hover {
-    transform: scale(1.1);
-    filter: brightness(1.2);
+    transform: translateY(-1.5px);
+    border-color: var(--gold);
+    box-shadow: 0 3px 7px rgba(58, 43, 26, 0.22);
 }
 
 .inv-token.inv-selected {
-    box-shadow: 0 0 16px rgba(240, 192, 64, 0.8);
-    border-color: #f0c040 !important;
-    transform: scale(1.1);
+    box-shadow: inset 0 0 0 1px var(--gold), 0 2px 6px rgba(58, 43, 26, 0.25);
+    border-color: var(--gold) !important;
+    transform: translateY(-1.5px);
 }
 
 .inv-token.token-adjective {
-    background: rgba(255, 180, 100, 0.15);
-    border-color: rgba(255, 180, 100, 0.4);
-    color: #ffb060;
+    background: rgba(168, 123, 50, 0.16);
+    border-color: rgba(168, 123, 50, 0.5);
+    color: var(--tok-adj);
 }
 
 .inv-token.token-noun {
-    background: rgba(100, 255, 150, 0.15);
-    border-color: rgba(100, 255, 150, 0.4);
-    color: #80ff90;
+    background: rgba(63, 107, 99, 0.15);
+    border-color: rgba(63, 107, 99, 0.5);
+    color: var(--tok-noun);
 }
 
 .inv-token.token-number {
-    background: rgba(100, 200, 255, 0.15);
-    border-color: rgba(100, 200, 255, 0.4);
-    color: #80d4ff;
+    background: rgba(140, 59, 46, 0.14);
+    border-color: rgba(140, 59, 46, 0.45);
+    color: var(--tok-number);
 }
 
 .inv-token.token-subject {
-    background: rgba(180, 100, 255, 0.15);
-    border-color: rgba(180, 100, 255, 0.4);
-    color: #c080ff;
+    background: rgba(106, 74, 92, 0.15);
+    border-color: rgba(106, 74, 92, 0.5);
+    color: var(--tok-subject);
 }
 
-/* Slot compatible highlight (insert mode with matching type) */
+/* 兼容空槽高亮 —— 去发光，改成边框墨色明灭 */
 .slot-compatible {
-    border-color: #f0c040 !important;
-    animation: slot-pulse 0.8s ease-in-out infinite !important;
-    box-shadow: 0 0 8px rgba(240, 192, 64, 0.5);
+    border-color: var(--gold) !important;
+    animation: slot-pulse-gold 1.8s var(--ease-in-out) infinite !important;
+}
+
+@keyframes slot-pulse-gold {
+    0%, 100% { border-color: rgba(168, 123, 50, 0.45); background-color: rgba(168, 123, 50, 0.04); }
+    50%      { border-color: rgba(168, 123, 50, 0.9);  background-color: rgba(168, 123, 50, 0.12); }
 }
 
 .inv-close-btn {
     padding: 8px 24px;
     font-size: 14px;
-    border: 1px solid #444;
-    border-radius: 6px;
-    background: #2a2a4e;
-    color: #e0e0e0;
+    border: 1px solid var(--paper-dark);
+    border-radius: var(--radius);
+    background: linear-gradient(180deg, var(--paper-1), var(--paper-3));
+    color: var(--ink);
     cursor: pointer;
+    font-family: inherit;
+    box-shadow: var(--shadow-card);
 }
 
 .inv-close-btn:hover {
-    background: #3a3a6e;
+    border-color: var(--gold);
+    background: linear-gradient(180deg, #f3e8cf, var(--paper-2));
 }
 
 .inv-empty {
-    color: #555;
+    color: var(--ink-faint);
     font-size: 14px;
     padding: 20px;
 }
 
-/* Reward area */
+/* 选中词块后的常驻提示条 —— 浮在底部居中，提供显式取消出口 */
+#inv-selection-hint {
+    position: fixed;
+    bottom: var(--space-4);
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
+    background: linear-gradient(160deg, var(--paper-1), var(--paper-3));
+    border: 1px solid var(--gold);
+    border-radius: var(--radius);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    z-index: 95;
+    font-size: var(--fs-small);
+    color: var(--ink);
+    animation: panel-rise var(--dur-base) var(--ease-gentle);
+}
+
+#inv-selection-text {
+    max-width: 60vw;
+}
+
+#inv-selection-cancel {
+    padding: 4px 12px;
+    font-size: 12px;
+    border: 1px solid var(--paper-dark);
+    border-radius: var(--radius-sm);
+    background: var(--paper-2);
+    color: var(--crimson);
+    cursor: pointer;
+    font-family: inherit;
+    white-space: nowrap;
+}
+#inv-selection-cancel:hover {
+    border-color: var(--crimson);
+    background: rgba(140, 59, 46, 0.10);
+}
+#inv-selection-cancel:focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 2px;
+}
+
+/* 点击 overlay 背景取消选择并关闭浮层（指针落在面板上则不触发） */
+#inventory-overlay {
+    cursor: pointer;
+}
+#inventory-panel {
+    cursor: default;
+}
+
+/* ============================================ */
+/* 战利品（行内）                                 */
+/* ============================================ */
+
 .reward-actions {
-    margin-top: 16px;
+    margin-top: var(--space-4);
     text-align: center;
 }
 
 .reward-actions button {
     padding: 10px 24px;
     font-size: 16px;
-    border: 1px solid #f0c040;
-    border-radius: 6px;
-    background: #2a2a4e;
-    color: #f0c040;
+    border: 1px solid var(--gold);
+    border-radius: var(--radius);
+    background: linear-gradient(180deg, var(--paper-1), var(--paper-3));
+    color: var(--gold);
     cursor: pointer;
     transition: all 0.2s;
+    font-family: inherit;
+    box-shadow: var(--shadow-card);
 }
 
 .reward-actions button:hover {
-    background: #3a3a6e;
+    background: linear-gradient(180deg, #f3e8cf, var(--paper-2));
+    transform: translateY(-1px);
 }
 
-/* Log area */
-#log-area {
-    background: #0f1a30;
-    border: 1px solid #2a3a5e;
-    border-radius: 8px;
-    padding: 16px;
-    max-height: 200px;
-    overflow-y: auto;
-    position: relative;
-}
+/* ============================================ */
+/* 战斗日志 = 古卷的批注栏（折叠版定义见文件后段，此处仅留滚动条做旧）*/
+/* ============================================ */
 
-#battle-log {
-    font-size: 14px;
-    line-height: 1.8;
-}
+/* 滚动条做旧 */
+#log-area::-webkit-scrollbar { width: 8px; }
+#log-area::-webkit-scrollbar-track { background: var(--paper-3); border-radius: 4px; }
+#log-area::-webkit-scrollbar-thumb { background: var(--paper-dark); border-radius: 4px; }
 
-#battle-log .log-entry {
-    padding: 2px 0;
-    border-bottom: 1px solid #1a2a4e;
-}
+/* ============================================ */
+/* 游戏结束                                       */
+/* ============================================ */
 
-#battle-log .log-entry.log-damage { color: #ff6060; }
-#battle-log .log-entry.log-swap { color: #ffff60; }
-#battle-log .log-entry.log-combo { color: #ff80ff; }
-#battle-log .log-entry.log-info { color: #80c0ff; }
-
-/* Game over overlay */
 #game-over {
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.85);
+    background: var(--overlay-bg);
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    gap: 20px;
+    gap: var(--space-5);
     z-index: 100;
     opacity: 0;
-    transition: opacity 0.5s ease;
+    transition: opacity var(--dur-slow) var(--ease-gentle);
     pointer-events: none;
 }
 
@@ -804,35 +1330,46 @@ body {
     pointer-events: auto;
 }
 
+/* 结算内容：背景淡入后，标题/正文/按钮依次轻盈浮起，营造仪式感 */
+#game-over.visible h2     { animation: panel-rise 520ms var(--ease-gentle) both; animation-delay: 120ms; }
+#game-over.visible p      { animation: panel-rise 520ms var(--ease-gentle) both; animation-delay: 240ms; }
+#game-over.visible button { animation: panel-rise 520ms var(--ease-gentle) both; animation-delay: 380ms; }
+
 #game-over h2 {
-    font-size: 36px;
-    color: #f0c040;
+    font-size: var(--fs-display);
+    color: var(--gold-bright);
+    letter-spacing: 6px;
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
 }
 
 #game-over p {
     font-size: 18px;
-    max-width: 400px;
+    max-width: 420px;
     text-align: center;
-    line-height: 1.6;
+    line-height: 1.7;
     white-space: pre-line;
+    color: var(--paper-1);
 }
 
 #game-over button {
-    padding: 12px 32px;
+    padding: 12px 34px;
     font-size: 18px;
-    border: 1px solid #f0c040;
-    border-radius: 6px;
-    background: #2a2a4e;
-    color: #f0c040;
+    border: 1px solid var(--gold);
+    border-radius: var(--radius);
+    background: linear-gradient(180deg, var(--paper-1), var(--paper-3));
+    color: var(--ink);
     cursor: pointer;
+    font-family: inherit;
+    box-shadow: var(--shadow-card);
 }
 
 #game-over button:hover {
-    background: #3a3a6e;
+    background: linear-gradient(180deg, #f3e8cf, var(--paper-2));
+    border-color: var(--gold-bright);
 }
 
 /* ============================================ */
-/* MAP OVERLAY                                  */
+/* 地图浮层 = 探险路线图                           */
 /* ============================================ */
 
 #map-overlay {
@@ -841,108 +1378,198 @@ body {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.9);
+    background: var(--overlay-bg);
     display: flex;
     justify-content: center;
     align-items: center;
     z-index: 90;
+    animation: overlay-fade var(--dur-base) var(--ease-out);
 }
 
 #map-panel {
-    background: #16213e;
-    border: 1px solid #2a3a5e;
-    border-radius: 12px;
-    padding: 24px 32px;
-    max-width: 500px;
-    width: 90%;
+    background:
+        radial-gradient(circle at 80% 10%, rgba(168, 123, 50, 0.10) 0%, transparent 40%),
+        linear-gradient(160deg, var(--paper-1), var(--paper-3));
+    border: 1px solid var(--paper-dark);
+    border-radius: var(--radius-lg);
+    padding: var(--space-5) 28px;
+    max-width: 880px;
+    width: 92%;
     max-height: 90vh;
-    overflow-y: auto;
+    overflow: hidden;
+    animation: panel-rise var(--dur-slow) var(--ease-gentle);
     text-align: center;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 250, 235, 0.5);
 }
 
 #map-panel h2 {
-    color: #f0c040;
-    margin-bottom: 20px;
+    color: var(--gold);
+    margin-bottom: var(--space-5);
     font-size: 22px;
+    letter-spacing: 4px;
 }
 
+/* 横向滚动视口：起点在左、Boss 在右 */
 #map-container {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    max-width: 100%;
+    padding-bottom: 6px;
+    /* 做旧滚动条 */
+    scrollbar-width: thin;
+    scrollbar-color: var(--paper-dark) transparent;
+}
+#map-container::-webkit-scrollbar { height: 8px; }
+#map-container::-webkit-scrollbar-track { background: transparent; }
+#map-container::-webkit-scrollbar-thumb { background: var(--paper-dark); border-radius: 4px; }
+
+/* 图谱画布：节点绝对定位其上，SVG 连线垫在底层 */
+.map-graph {
+    position: relative;
+    margin: 0 auto;
 }
 
-.map-layer {
-    display: flex;
-    align-items: center;
-    gap: 12px;
+/* SVG 连线层 */
+.map-edges {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
 }
 
-.map-layer-label {
-    font-size: 13px;
-    color: #666;
-    min-width: 50px;
-    text-align: right;
+.map-edges .edge {
+    fill: none;
+    stroke: var(--ink-faint);
+    stroke-width: 1.5;
+    stroke-dasharray: none;     /* 实线：干净不刺眼 */
+    stroke-linecap: round;
+    opacity: 0.25;
 }
 
-.map-nodes {
-    display: flex;
-    gap: 10px;
-    flex: 1;
-    justify-content: center;
+/* 未解锁区域的连线：更淡 */
+.map-edges .edge-hidden {
+    fill: none;
+    stroke: var(--ink-faint);
+    stroke-width: 1;
+    stroke-dasharray: none;
+    stroke-linecap: round;
+    opacity: 0.08;
 }
 
+/* 已走过的路径：实线墨迹加深，是地图上最清晰的线 */
+.map-edges .edge-traveled {
+    stroke: var(--ink);
+    stroke-width: 3;
+    stroke-dasharray: none;
+    opacity: 0.75;
+    filter: drop-shadow(0 1px 2px rgba(58, 43, 26, 0.3));
+}
+
+/* 通向当前可选节点的路径：金褐高亮，提示”接下来能去这几条” */
+.map-edges .edge-open {
+    stroke: var(--gold);
+    stroke-width: 3;
+    stroke-dasharray: 6 4;
+    opacity: 0.95;
+    animation: edge-flow 2s var(--ease-in-out) infinite;
+}
+
+@keyframes edge-flow {
+    0%, 100% { opacity: 0.55; }
+    50%      { opacity: 1; }
+}
+
+/* 节点：方形封蜡牌，绝对定位 */
 .map-node {
+    position: absolute;
+    width: 64px;
+    height: 64px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 4px;
-    padding: 10px 16px;
-    border: 2px solid #444;
-    border-radius: 8px;
-    background: #1a1a2e;
+    justify-content: center;
+    gap: 3px;
+    border: 1.5px solid var(--paper-dark);
+    border-radius: var(--radius);
+    background: var(--paper-2);
     cursor: pointer;
-    transition: all 0.2s ease;
-    min-width: 70px;
+    transition: transform var(--dur-fast) var(--ease-out),
+                box-shadow var(--dur-base) var(--ease-out),
+                border-color var(--dur-base) var(--ease-out),
+                background-color var(--dur-base) var(--ease-out);
+    box-shadow: var(--shadow-soft);
+    z-index: 1;
 }
 
-.map-node .node-icon {
-    font-size: 20px;
-}
+.map-node .node-icon { font-size: 22px; line-height: 1; }
 
 .map-node .node-label {
-    font-size: 12px;
-    color: #ccc;
+    font-size: 11px;
+    color: var(--ink-soft);
 }
 
+/* 节点类型：底色透明度提高到 0.14-0.18 便于辨识，精英/Boss 加主题色描边 */
+.map-node.node-battle  { background: rgba(140, 59, 46, 0.14); }
+.map-node.node-elite   { background: rgba(122, 58, 92, 0.16); border-color: rgba(122, 58, 92, 0.6); }
+.map-node.node-event   { background: rgba(47, 107, 107, 0.14); }
+.map-node.node-rest    { background: rgba(47, 107, 107, 0.10); }
+.map-node.node-boss    {
+    width: 76px;
+    height: 76px;
+    background: rgba(140, 59, 46, 0.18);
+    border-width: 2px;
+    border-color: var(--crimson);
+}
+.map-node.node-boss .node-icon { font-size: 28px; }
+
+/* 可选：金褐描边 + 墨色呼吸，明确“现在能点这个” */
 .map-node.node-available {
-    border-color: #f0c040;
-    animation: node-pulse 1.5s ease-in-out infinite;
+    border-color: var(--gold);
+    box-shadow: 0 2px 8px rgba(58, 43, 26, 0.22);
+    animation: node-pulse 2s var(--ease-in-out) infinite;
 }
 
 .map-node.node-available:hover {
-    transform: scale(1.1);
-    box-shadow: 0 0 16px rgba(240, 192, 64, 0.5);
-    background: #2a2a4e;
+    transform: translateY(-2px) scale(1.04);
+    box-shadow: 0 5px 12px rgba(58, 43, 26, 0.3);
+    border-color: var(--gold);
+    background: var(--paper-1);
+    animation: none;
 }
 
+/* 已访问：淡出 + 实线描边，表示已成定局 */
+/* 已访问：半透明 + 对角线划过，明确"已完成" */
 .map-node.node-visited {
-    opacity: 0.3;
+    opacity: 0.5;
+    filter: grayscale(0.4);
+    position: relative;
+}
+.map-node.node-visited::after {
+    content: "";
+    position: absolute;
+    inset: 6px;
+    border-top: 2px solid var(--ink-faint);
+    transform: rotate(-12deg);
+    transform-origin: center;
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+/* 不可达：更淡 + 虚线边框，明确"不可点" */
+.map-node.node-locked {
+    opacity: 0.32;
+    cursor: not-allowed;
     border-style: dashed;
 }
 
-.map-node.node-locked {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
+/* 可选节点：去发光，改为边框与底色的墨色呼吸 */
 @keyframes node-pulse {
-    0%, 100% { box-shadow: 0 0 4px rgba(240, 192, 64, 0.2); }
-    50% { box-shadow: 0 0 12px rgba(240, 192, 64, 0.5); }
+    0%, 100% { border-color: rgba(168, 123, 50, 0.55); }
+    50%      { border-color: rgba(168, 123, 50, 1);    }
 }
 
 /* ============================================ */
-/* EVENT OVERLAY                                */
+/* 事件浮层                                       */
 /* ============================================ */
 
 #event-overlay {
@@ -951,33 +1578,39 @@ body {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.9);
+    background: var(--overlay-bg);
     display: flex;
     justify-content: center;
     align-items: center;
     z-index: 90;
+    animation: overlay-fade var(--dur-base) var(--ease-out);
 }
 
 #event-panel {
-    background: #16213e;
-    border: 1px solid #2a3a5e;
-    border-radius: 12px;
-    padding: 24px 32px;
+    background:
+        radial-gradient(circle at 20% 10%, rgba(106, 74, 92, 0.10) 0%, transparent 40%),
+        linear-gradient(160deg, var(--paper-1), var(--paper-3));
+    border: 1px solid var(--paper-dark);
+    border-radius: var(--radius-lg);
+    padding: var(--space-5) 32px;
     max-width: 450px;
     width: 90%;
     text-align: center;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 250, 235, 0.5);
+    animation: panel-rise var(--dur-slow) var(--ease-gentle);
 }
 
 #event-panel h2 {
-    color: #80c0ff;
-    margin-bottom: 12px;
-    font-size: 20px;
+    color: var(--teal);
+    margin-bottom: var(--space-3);
+    font-size: 21px;
+    letter-spacing: 3px;
 }
 
 #event-panel p {
-    color: #ccc;
-    margin-bottom: 20px;
-    line-height: 1.6;
+    color: var(--ink-soft);
+    margin-bottom: var(--space-5);
+    line-height: 1.7;
     font-size: 16px;
 }
 
@@ -990,19 +1623,21 @@ body {
 .event-choice-btn {
     padding: 12px 20px;
     font-size: 15px;
-    border: 1px solid #4a6a9e;
-    border-radius: 6px;
-    background: #1a2a4e;
-    color: #e0e0e0;
+    border: 1px solid var(--paper-edge);
+    border-radius: var(--radius);
+    background: var(--paper-2);
+    color: var(--ink);
     cursor: pointer;
     transition: all 0.2s;
     text-align: left;
+    font-family: inherit;
+    box-shadow: var(--shadow-soft);
 }
 
 .event-choice-btn:hover {
-    background: #2a3a6e;
-    border-color: #80c0ff;
-    color: #fff;
+    background: var(--paper-1);
+    border-color: var(--teal);
+    transform: translateX(2px);
 }
 
 .event-choice-row {
@@ -1010,40 +1645,34 @@ body {
     align-items: center;
     gap: 10px;
     padding: 8px 12px;
-    border: 1px solid rgba(74, 106, 158, 0.4);
-    border-radius: 6px;
-    background: rgba(20, 30, 50, 0.6);
+    border: 1px solid var(--paper-edge);
+    border-radius: var(--radius);
+    background: rgba(184, 154, 100, 0.12);
 }
 
 .event-choice-text {
     flex: 1;
     font-size: 15px;
-    color: #e0e0e0;
-    line-height: 1.6;
+    color: var(--ink);
+    line-height: 1.7;
 }
 
-.event-choice-text .token {
-    display: inline;
-    margin: 0 2px;
-}
-
-#event-description .token {
-    display: inline;
-    margin: 0 2px;
-}
+.event-choice-text .token { display: inline; margin: 0 2px; }
+#event-description .token { display: inline; margin: 0 2px; }
 
 /* ============================================ */
-/* SKILL SYSTEM                                 */
+/* 技能系统                                       */
 /* ============================================ */
 
 #skill-area {
-    background: #0f1a30;
-    border: 1px solid #2a3a5e;
-    border-radius: 8px;
-    padding: 12px 16px;
+    background: linear-gradient(180deg, rgba(184, 154, 100, 0.16), rgba(184, 154, 100, 0.06));
+    border: 1px solid var(--paper-edge);
+    border-radius: var(--radius);
+    padding: var(--space-3) var(--space-4);
     display: flex;
     flex-direction: column;
     gap: 10px;
+    box-shadow: var(--shadow-inset);
 }
 
 #mana-display {
@@ -1054,34 +1683,34 @@ body {
 }
 
 .mana-icon {
-    color: #60a0ff;
+    color: var(--teal);
     font-size: 18px;
 }
 
 .mana-label {
-    color: #60a0ff;
+    color: var(--teal);
     font-weight: bold;
 }
 
 #mana-value {
-    color: #80c0ff;
+    color: var(--teal);
     font-weight: bold;
     font-size: 18px;
 }
 
 #mana-max {
-    color: #4080b0;
+    color: var(--ink-faint);
     font-size: 14px;
 }
 
 .mana-regen {
-    color: #4080b0;
+    color: var(--ink-faint);
     font-size: 12px;
 }
 
 #skill-slots {
     display: flex;
-    gap: 8px;
+    gap: var(--space-2);
     flex-wrap: wrap;
 }
 
@@ -1092,23 +1721,25 @@ body {
     gap: 2px;
     padding: 8px 14px;
     min-width: 90px;
-    border: 1px solid #444;
-    border-radius: 6px;
-    background: #1a2a4e;
-    color: #e0e0e0;
+    border: 1px solid var(--paper-dark);
+    border-radius: var(--radius);
+    background: linear-gradient(180deg, var(--paper-1), var(--paper-3));
+    color: var(--ink);
     cursor: pointer;
     transition: all 0.2s;
     position: relative;
+    font-family: inherit;
+    box-shadow: var(--shadow-soft);
 }
 
 .skill-btn:hover:not(:disabled) {
     transform: scale(1.05);
-    border-color: #80c0ff;
-    background: #2a3a6e;
+    border-color: var(--teal);
+    background: linear-gradient(180deg, #f3e8cf, var(--paper-2));
 }
 
 .skill-btn:disabled {
-    opacity: 0.35;
+    opacity: 0.4;
     cursor: not-allowed;
     transform: none;
 }
@@ -1120,112 +1751,105 @@ body {
 
 .skill-btn .skill-cost {
     font-size: 11px;
-    color: #60a0ff;
+    color: var(--teal);
 }
 
 .skill-btn .skill-desc {
     font-size: 10px;
-    color: #888;
+    color: var(--ink-faint);
     max-width: 80px;
     text-align: center;
     line-height: 1.3;
 }
 
-/* Skill categories color coding */
-.skill-btn.skill-offense {
-    border-color: rgba(255, 100, 80, 0.4);
-}
-
+/* 技能分类色编码 */
+.skill-btn.skill-offense { border-color: rgba(140, 59, 46, 0.5); }
 .skill-btn.skill-offense:hover:not(:disabled) {
-    border-color: #ff6050;
-    box-shadow: 0 0 10px rgba(255, 100, 80, 0.3);
+    border-color: var(--crimson);
+    box-shadow: 0 0 10px rgba(140, 59, 46, 0.3);
 }
 
-.skill-btn.skill-defense {
-    border-color: rgba(100, 200, 255, 0.4);
-}
-
+.skill-btn.skill-defense { border-color: rgba(63, 107, 99, 0.5); }
 .skill-btn.skill-defense:hover:not(:disabled) {
-    border-color: #60c8ff;
-    box-shadow: 0 0 10px rgba(100, 200, 255, 0.3);
+    border-color: var(--teal);
+    box-shadow: 0 0 10px rgba(63, 107, 99, 0.3);
 }
 
-.skill-btn.skill-control {
-    border-color: rgba(200, 150, 255, 0.4);
-}
-
+.skill-btn.skill-control { border-color: rgba(106, 74, 92, 0.5); }
 .skill-btn.skill-control:hover:not(:disabled) {
-    border-color: #c896ff;
-    box-shadow: 0 0 10px rgba(200, 150, 255, 0.3);
+    border-color: var(--plum);
+    box-shadow: 0 0 10px rgba(106, 74, 92, 0.3);
 }
 
-/* Sealed skill slot */
+/* 被封印的技能槽 */
 .skill-btn.skill-sealed {
-    background: #0a0a1a;
+    background: var(--paper-3);
     border-style: dashed;
-    border-color: #333;
+    border-color: var(--paper-dark);
+    filter: grayscale(0.5) sepia(0.2);
 }
 
 .skill-btn.skill-sealed .skill-name {
-    color: #555;
+    color: var(--ink-faint);
 }
 
-/* Empty skill slot */
+/* 空技能槽 */
 .skill-btn.skill-empty {
     background: transparent;
     border-style: dashed;
-    border-color: #333;
+    border-color: var(--paper-edge);
     min-height: 60px;
+    box-shadow: none;
 }
 
 .skill-btn.skill-empty .skill-name {
-    color: #444;
+    color: var(--ink-faint);
     font-style: italic;
 }
 
-/* Skill use animation */
+/* 施放动画：去强发光、去夸张缩放，改成轻一沉再回弹的“发力”感 */
 .skill-btn.skill-casting {
-    animation: skill-cast 0.5s ease;
+    animation: skill-cast var(--dur-slow) var(--ease-soft-back);
 }
 
 @keyframes skill-cast {
-    0% { transform: scale(1); box-shadow: 0 0 0 rgba(100, 200, 255, 0); }
-    40% { transform: scale(0.9); box-shadow: 0 0 20px rgba(100, 200, 255, 0.8); }
-    100% { transform: scale(1); box-shadow: 0 0 0 rgba(100, 200, 255, 0); }
+    0%   { transform: scale(1); box-shadow: var(--shadow-card); }
+    35%  { transform: scale(0.97) translateY(1px); box-shadow: var(--shadow-inset); }
+    100% { transform: scale(1); box-shadow: var(--shadow-card); }
 }
 
-/* Mana insufficient shake */
+/* 法力不足：幅度收小的衰减抖动，提示而不刺眼 */
 .mana-shake {
-    animation: mana-shake-anim 0.5s ease;
-    color: #ff4040 !important;
+    animation: mana-shake-anim 0.36s var(--ease-out);
+    color: var(--crimson) !important;
 }
 
 @keyframes mana-shake-anim {
     0%, 100% { transform: translateX(0); }
-    20% { transform: translateX(-3px); }
-    40% { transform: translateX(3px); }
-    60% { transform: translateX(-2px); }
-    80% { transform: translateX(2px); }
+    25%  { transform: translateX(-2px); }
+    50%  { transform: translateX(2px); }
+    75%  { transform: translateX(-1px); }
 }
 
-/* =============================================================
-   RELIC BAR
-   ============================================================= */
+/* ============================================ */
+/* 遗物栏 = 蜡封徽记                              */
+/* ============================================ */
 
 #relic-bar {
     display: flex;
     gap: 6px;
-    padding: 8px 12px;
-    background: rgba(40, 40, 60, 0.8);
-    border-radius: 8px;
-    border: 1px solid rgba(255, 215, 0, 0.3);
-    margin-bottom: 12px;
+    padding: var(--space-2) var(--space-3);
+    background: rgba(184, 154, 100, 0.18);
+    border-radius: var(--radius);
+    border: 1px solid var(--gold);
+    margin-bottom: var(--space-3);
     flex-wrap: wrap;
     align-items: center;
     min-height: 36px;
     overflow: visible;
     position: relative;
     z-index: 100;
+    box-shadow: var(--shadow-inset);
 }
 
 .relic-icon {
@@ -1233,14 +1857,14 @@ body {
     cursor: help;
     transition: transform 0.2s ease;
     padding: 2px 4px;
-    border-radius: 4px;
-    background: rgba(255, 215, 0, 0.1);
+    border-radius: var(--radius-sm);
+    background: rgba(168, 123, 50, 0.15);
     position: relative;
 }
 
 .relic-icon:hover {
     transform: scale(1.3);
-    background: rgba(255, 215, 0, 0.25);
+    background: rgba(168, 123, 50, 0.3);
 }
 
 .relic-icon .relic-tooltip {
@@ -1249,40 +1873,45 @@ body {
     top: 130%;
     left: 0;
     transform: none;
-    background: #1a1a2e;
-    border: 1px solid #ffd700;
-    border-radius: 6px;
+    background: linear-gradient(160deg, var(--paper-1), var(--paper-3));
+    border: 1px solid var(--gold);
+    border-radius: var(--radius);
     padding: 8px 12px;
     min-width: 180px;
     max-width: 240px;
     z-index: 1000;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
     pointer-events: none;
-    white-space: nowrap;
+    white-space: normal; /* 去 nowrap，长遗物名可换行不被裁 */
 }
 
-.relic-icon:hover .relic-tooltip {
-    display: block;
+.relic-icon:hover .relic-tooltip,
+.relic-icon.open .relic-tooltip,
+.relic-icon:focus-visible .relic-tooltip { display: block; }
+
+/* 键盘聚焦可见态 */
+.relic-icon:focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 2px;
 }
 
 .relic-tooltip .relic-tooltip-name {
-    color: #ffd700;
-    font-size: 0.75em;
+    color: var(--gold);
+    font-size: 13px;        /* 绝对值，不再 em 链式压缩 */
     font-weight: bold;
     margin-bottom: 4px;
-    white-space: nowrap;
 }
 
 .relic-tooltip .relic-tooltip-desc {
-    color: #ccc;
-    font-size: 0.65em;
-    line-height: 1.4;
+    color: var(--ink-soft);
+    font-size: 12px;        /* 绝对值 */
+    line-height: 1.5;
     white-space: normal;
 }
 
-/* =============================================================
-   REWARD OVERLAY (post-battle)
-   ============================================================= */
+/* ============================================ */
+/* 战后奖励浮层                                   */
+/* ============================================ */
 
 #reward-overlay {
     position: fixed;
@@ -1290,7 +1919,7 @@ body {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.9);
+    background: var(--overlay-bg);
     display: flex;
     justify-content: center;
     align-items: center;
@@ -1298,41 +1927,46 @@ body {
 }
 
 #reward-panel {
-    background: #16213e;
-    border: 1px solid #f0c040;
-    border-radius: 12px;
-    padding: 24px 32px;
+    background:
+        radial-gradient(circle at 50% 0%, rgba(168, 123, 50, 0.14) 0%, transparent 45%),
+        linear-gradient(160deg, var(--paper-1), var(--paper-3));
+    border: 1px solid var(--gold);
+    border-radius: var(--radius-lg);
+    padding: var(--space-5) 32px;
     max-width: 500px;
     width: 90%;
     text-align: center;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 250, 235, 0.5);
 }
 
 #reward-title {
-    color: #f0c040;
-    margin-bottom: 16px;
-    font-size: 22px;
+    color: var(--gold);
+    margin-bottom: var(--space-4);
+    font-size: var(--fs-h2);
+    letter-spacing: 4px;
 }
 
 #reward-basic {
-    color: #ccc;
+    color: var(--ink-soft);
     font-size: 16px;
     line-height: 2;
-    margin-bottom: 20px;
-    padding: 12px;
-    background: #0f1a30;
-    border-radius: 8px;
-    border: 1px solid #2a3a5e;
+    margin-bottom: var(--space-5);
+    padding: var(--space-3);
+    background: var(--paper-3);
+    border-radius: var(--radius);
+    border: 1px solid var(--paper-edge);
+    box-shadow: var(--shadow-inset);
 }
 
-#reward-basic .reward-gold { color: #f0c040; font-weight: bold; }
-#reward-basic .reward-ink { color: #80c0ff; font-weight: bold; }
+#reward-basic .reward-gold { color: var(--gold); font-weight: bold; }
+#reward-basic .reward-ink { color: var(--teal); font-weight: bold; }
 
 #reward-choices {
     display: flex;
     gap: 10px;
     justify-content: center;
     flex-wrap: wrap;
-    margin-bottom: 20px;
+    margin-bottom: var(--space-5);
 }
 
 .reward-card {
@@ -1342,65 +1976,662 @@ body {
     gap: 6px;
     padding: 14px 16px;
     min-width: 110px;
-    border: 1px solid #444;
-    border-radius: 8px;
-    background: #1a2a4e;
+    border: 1px solid var(--paper-dark);
+    border-radius: var(--radius);
+    background: var(--paper-2);
     cursor: pointer;
     transition: all 0.2s;
+    box-shadow: var(--shadow-soft);
 }
 
 .reward-card:hover {
     transform: scale(1.05);
-    border-color: #f0c040;
-    box-shadow: 0 0 12px rgba(240, 192, 64, 0.4);
-    background: #2a3a6e;
+    border-color: var(--gold);
+    box-shadow: 0 0 12px rgba(168, 123, 50, 0.4);
+    background: var(--paper-1);
 }
 
-.reward-card .card-icon {
-    font-size: 24px;
-}
+.reward-card .card-icon { font-size: 24px; }
 
 .reward-card .card-name {
     font-size: 14px;
     font-weight: bold;
-    color: #e0e0e0;
+    color: var(--ink);
 }
 
 .reward-card .card-type {
     font-size: 11px;
-    color: #888;
+    color: var(--ink-faint);
 }
 
 .reward-card .card-desc {
     font-size: 11px;
-    color: #aaa;
+    color: var(--ink-soft);
     max-width: 120px;
     text-align: center;
     line-height: 1.4;
 }
 
-.reward-card.card-token { border-color: rgba(255, 180, 100, 0.4); }
-.reward-card.card-skill-offense { border-color: rgba(255, 100, 80, 0.4); }
-.reward-card.card-skill-defense { border-color: rgba(100, 200, 255, 0.4); }
-.reward-card.card-skill-control { border-color: rgba(200, 150, 255, 0.4); }
-.reward-card.card-relic { border-color: rgba(240, 192, 64, 0.5); }
+.reward-card.card-token         { border-color: rgba(168, 123, 50, 0.5); }
+.reward-card.card-skill-offense { border-color: rgba(140, 59, 46, 0.5); }
+.reward-card.card-skill-defense { border-color: rgba(63, 107, 99, 0.5); }
+.reward-card.card-skill-control { border-color: rgba(106, 74, 92, 0.5); }
+.reward-card.card-relic         { border-color: rgba(168, 123, 50, 0.6); }
 
+.reward-card.card-gold {
+    border-color: rgba(240, 192, 64, 0.7);
+    background: rgba(240, 192, 64, 0.08);
+}
 .reward-card.card-skip {
-    border-color: rgba(255, 255, 255, 0.2);
+    border-color: var(--paper-edge);
     border-style: dashed;
 }
 
 #reward-continue {
-    padding: 10px 24px;
+    padding: 10px 26px;
     font-size: 16px;
-    border: 1px solid #f0c040;
-    border-radius: 6px;
-    background: #2a2a4e;
-    color: #f0c040;
+    border: 1px solid var(--gold);
+    border-radius: var(--radius);
+    background: linear-gradient(180deg, var(--paper-1), var(--paper-3));
+    color: var(--gold);
     cursor: pointer;
     transition: all 0.2s;
+    font-family: inherit;
+    box-shadow: var(--shadow-card);
 }
 
 #reward-continue:hover {
-    background: #3a3a6e;
+    background: linear-gradient(180deg, #f3e8cf, var(--paper-2));
+    transform: translateY(-1px);
+}
+
+/* =============================================================
+   墨渍渗透边缘效果
+   压力值驱动屏幕边缘出现墨渍侵蚀，核心概念「墨染文字」
+   ============================================================= */
+
+/* 墨渍渗透层：降为背景层（z-index:-1），绝不覆盖 UI/文字。
+   危险感靠"墨渍蔓延范围"而非"黑度"，最高压力也不糊住关键信息。 */
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: -1;              /* 在 body 背景之下，不盖 UI */
+    opacity: 0;
+    transition: opacity var(--dur-slow) var(--ease-out);
+    background:
+        /* 左上角墨渍 */
+        radial-gradient(ellipse 200px 160px at 5% 8%, var(--ink) 0%, transparent 70%),
+        /* 右上角墨渍 */
+        radial-gradient(ellipse 180px 150px at 95% 5%, var(--ink) 0%, transparent 70%),
+        /* 左下角墨渍 */
+        radial-gradient(ellipse 190px 160px at 3% 92%, var(--ink) 0%, transparent 70%),
+        /* 右下角墨渍 */
+        radial-gradient(ellipse 160px 140px at 97% 94%, var(--ink) 0%, transparent 70%),
+        /* 顶部边缘渗墨（收窄） */
+        radial-gradient(ellipse 30% 18px at 50% 0%, var(--ink) 0%, transparent 70%),
+        /* 底部边缘渗墨（收窄） */
+        radial-gradient(ellipse 30% 18px at 50% 100%, var(--ink) 0%, transparent 70%),
+        /* 左侧边缘 */
+        radial-gradient(ellipse 18px 40% at 0% 50%, var(--ink) 0%, transparent 60%),
+        /* 右侧边缘 */
+        radial-gradient(ellipse 18px 40% at 100% 50%, var(--ink) 0%, transparent 60%);
+}
+
+/* JS 动态添加的 class，根据压力等级驱动 opacity —— 上限 0.42，不再糊住 UI */
+body.pressure-stage-safe  { /* 0-4: 无效果 */ }
+body.pressure-stage-noise  { /* 5-9: 噪音侵入，边缘开始渗透 */ }
+body.pressure-stage-noise::before  { opacity: 0.14; }
+body.pressure-stage-corrupt { /* 10-14: 词块腐蚀 */ }
+body.pressure-stage-corrupt::before { opacity: 0.26; }
+body.pressure-stage-lock   { /* 15-19: 封印 */ }
+body.pressure-stage-lock::before   { opacity: 0.35; }
+body.pressure-stage-max    { /* 20: 极限 */ }
+body.pressure-stage-max::before    { opacity: 0.42; }
+
+/* 墨渍粒子：从边缘飞入的墨滴 —— JS 动态创建 */
+.ink-splatter {
+    position: fixed;
+    pointer-events: none;
+    z-index: 201;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--ink);
+    animation: ink-splat 600ms var(--ease-out) forwards;
+    opacity: 0.7;
+}
+
+@keyframes ink-splat {
+    0%   { transform: scale(0.3) translate(0, 0); opacity: 0.7; }
+    30%  { transform: scale(3.5) translate(var(--sx), var(--sy)); opacity: 0.5; }
+    100% { transform: scale(1.5) translate(calc(var(--sx) * 2), calc(var(--sy) * 2)); opacity: 0; }
+}
+
+/* 被腐蚀的词块（噪音）—— 扭曲、模糊、不可读 */
+.token-corrupted {
+    font-family: "Courier New", monospace !important;
+    letter-spacing: 2px;
+    filter: blur(0.6px);
+    text-shadow:
+        1px 1px 0 rgba(58, 43, 26, 0.3),
+        -1px 0 0 rgba(58, 43, 26, 0.2);
+    border-color: var(--plum) !important;
+    background: rgba(106, 74, 92, 0.18) !important;
+    animation: corrupt-flicker 2s steps(3) infinite;
+}
+
+@keyframes corrupt-flicker {
+    0%, 100% { opacity: 0.7; filter: blur(0.6px); }
+    50%      { opacity: 0.4; filter: blur(1.2px); }
+}
+
+/* =============================================================
+   顶部资源条
+   ============================================================= */
+
+#resource-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    padding: 6px var(--space-4);
+    background: linear-gradient(180deg, rgba(255, 250, 235, 0.5), rgba(184, 154, 100, 0.15));
+    border: 1px solid var(--paper-edge);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-inset);
+    font-size: 15px;
+    flex-wrap: wrap;
+}
+
+.resource-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.resource-icon {
+    font-size: 16px;
+    line-height: 1;
+    vertical-align: middle; /* 统一基线，emoji 与 ✦ 不再错位 */
+}
+
+/* 法力 ✦ 是字形字符（非 emoji），单独着靛青与 emoji 视觉协调 */
+#mana-display .resource-icon {
+    color: var(--teal);
+    font-weight: bold;
+}
+
+.resource-label {
+    color: var(--ink-faint);
+    font-size: 13px;
+    font-weight: bold;
+}
+
+.resource-value {
+    color: var(--ink);
+    font-weight: bold;
+    font-size: 18px;
+    min-width: 18px;
+    text-align: center;
+}
+
+.resource-sep {
+    color: var(--ink-faint);
+}
+
+#swap-counter .resource-value { color: var(--gold); }
+
+/* 可拖的 swap-count（笔力）渲染成迷你 chip，让玩家看出它是可交换词块 */
+#swap-counter .resource-value.swappable-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 8px;
+    border: 1px solid rgba(168, 123, 50, 0.5);
+    border-radius: var(--radius-sm);
+    background: rgba(168, 123, 50, 0.12);
+    min-width: 22px;
+    justify-content: center;
+    transition: border-color var(--dur-fast) var(--ease-out),
+                background var(--dur-fast) var(--ease-out);
+}
+#swap-counter .resource-value.swappable-chip:hover {
+    border-color: var(--gold);
+    background: rgba(168, 123, 50, 0.22);
+}
+#swap-counter .resource-value.swappable-chip:focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 2px;
+}
+
+#mana-display .mana-regen {
+    color: var(--ink-faint);
+    font-size: 12px;
+    margin-left: 2px;
+}
+
+/* 资源条中的压力条简化版 */
+#resource-bar .pressure-track {
+    width: 60px;
+    height: 6px;
+}
+
+/* =============================================================
+   总结语卡片（常驻，独特样式）
+   ============================================================= */
+
+.summary-card {
+    background: linear-gradient(135deg, rgba(227, 211, 173, 0.6), rgba(216, 193, 145, 0.35));
+    border: 1px solid var(--paper-edge);
+    border-left: 4px solid var(--plum);
+    border-radius: var(--radius);
+    padding: var(--space-3) var(--space-4);
+    position: relative;
+    box-shadow: var(--shadow-inset);
+}
+
+.summary-card .summary-label {
+    font-size: 11px;
+    color: var(--plum);
+    letter-spacing: 4px;
+    margin-bottom: 2px;
+    font-weight: bold;
+}
+
+.summary-card p {
+    font-size: var(--fs-small);
+    line-height: 2;
+    color: var(--ink-soft);
+}
+
+/* =============================================================
+   核心叙事大卡片（环境 + 战斗合并）
+   ============================================================= */
+
+.narrative-card {
+    background: linear-gradient(180deg, rgba(255, 250, 235, 0.45), rgba(227, 211, 173, 0.2));
+    border: 2px solid var(--paper-dark);
+    border-radius: var(--radius);
+    padding: var(--space-4) var(--space-5);
+    position: relative;
+    box-shadow: var(--shadow-card);
+}
+
+.narrative-card p {
+    font-size: var(--fs-body);
+    line-height: 2.4;
+    min-height: 32px;
+    color: var(--ink);
+}
+
+.narrative-divider {
+    border: none;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--paper-dark), transparent);
+    margin: var(--space-3) 0;
+}
+
+/* =============================================================
+   双状态栏（你 VS 敌人，对称布局）
+   ============================================================= */
+
+#status-area {
+    display: flex;
+    justify-content: center;
+    align-items: stretch;
+    gap: var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    background: linear-gradient(180deg, rgba(255, 250, 235, 0.3), rgba(184, 154, 100, 0.12));
+    border-radius: var(--radius);
+    border: 1px solid var(--paper-edge);
+    font-size: var(--fs-body);
+    box-shadow: var(--shadow-inset);
+}
+
+/* 两侧统一为纵向卡片：名字 / HP / 武器或意图 —— 三行对位，真对称 */
+.status-side {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-1);
+    flex: 1;
+    min-width: 0;
+}
+
+.status-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    line-height: 1.5;
+}
+
+.status-name {
+    font-weight: bold;
+    color: var(--ink-soft);
+    font-size: 18px;
+    min-width: 24px;
+    text-align: center;
+}
+
+.status-vs {
+    font-size: 22px;
+    font-weight: bold;
+    color: var(--crimson);
+    letter-spacing: 2px;
+    opacity: 0.5;
+}
+
+/* =============================================================
+   主要行动按钮
+   ============================================================= */
+
+.btn-primary {
+    background: linear-gradient(180deg, #f3e8cf, #d8bf8f) !important;
+    border-color: var(--gold) !important;
+    color: var(--ink) !important;
+    font-weight: bold !important;
+    font-size: 17px !important;
+    padding: 12px 32px !important;
+    box-shadow: 0 3px 10px rgba(58, 43, 26, 0.25) !important;
+}
+
+.btn-primary:hover {
+    background: linear-gradient(180deg, #faf3e0, #e8d0a0) !important;
+    border-color: var(--gold-bright) !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0 6px 16px rgba(58, 43, 26, 0.3) !important;
+}
+
+.btn-primary:active {
+    transform: translateY(0) !important;
+    box-shadow: var(--shadow-inset) !important;
+}
+
+/* =============================================================
+   可折叠战斗日志
+   ============================================================= */
+
+#log-area {
+    background: linear-gradient(180deg, rgba(184, 154, 100, 0.16), rgba(184, 154, 100, 0.04));
+    border: 1px solid var(--paper-edge);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: var(--shadow-inset);
+    transition: max-height var(--dur-base) var(--ease-out);
+}
+
+.log-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-2) var(--space-4);
+    cursor: pointer;
+    user-select: none;
+    border-bottom: 1px solid rgba(201, 171, 120, 0.3);
+}
+
+.log-header:hover {
+    background: rgba(184, 154, 100, 0.12);
+}
+
+.log-header .area-label {
+    position: static;
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--ink-faint);
+    font-size: 12px;
+    letter-spacing: 2px;
+}
+
+.log-toggle-icon {
+    font-size: 11px;
+    color: var(--ink-faint);
+    transition: transform var(--dur-base) var(--ease-out);
+}
+
+/* Collapsed state: only show header + last 2 lines */
+.log-collapsed .log-body {
+    max-height: 56px;
+    overflow: hidden;
+    position: relative;
+}
+
+.log-collapsed .log-body::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 24px;
+    background: linear-gradient(transparent, rgba(227, 211, 173, 0.6));
+    pointer-events: none;
+}
+
+.log-collapsed .log-toggle-icon {
+    transform: rotate(180deg);
+}
+
+/* Expanded state */
+#log-area:not(.log-collapsed) .log-body {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+#log-area:not(.log-collapsed) .log-toggle-icon {
+    transform: rotate(0deg);
+}
+
+#battle-log {
+    font-size: var(--fs-small);
+    line-height: 1.9;
+    padding: var(--space-2) var(--space-4);
+}
+
+#battle-log .log-entry {
+    padding: 2px 0;
+    border-bottom: 1px solid rgba(201, 171, 120, 0.4);
+    color: var(--ink-soft);
+}
+
+#battle-log .log-entry.log-damage { color: var(--crimson); }
+#battle-log .log-entry.log-swap   { color: var(--gold); }
+#battle-log .log-entry.log-combo  { color: var(--plum); }
+#battle-log .log-entry.log-info   { color: var(--teal); }
+
+/* 滚动条做旧 */
+.log-body::-webkit-scrollbar { width: 8px; }
+.log-body::-webkit-scrollbar-track { background: var(--paper-3); border-radius: 4px; }
+.log-body::-webkit-scrollbar-thumb { background: var(--paper-dark); border-radius: 4px; }
+
+/* =============================================================
+   响应式断点（移动端适配）
+   ============================================================= */
+
+@media (max-width: 560px) {
+    body { padding: 12px 8px 24px; }
+
+    #game-container {
+        padding: 16px 14px 20px;
+        gap: var(--space-3);
+    }
+
+    #game-header h1 { font-size: 22px; letter-spacing: 0.3em; }
+
+    /* 资源条：缩小字号与间距，允许换行 */
+    #resource-bar { gap: var(--space-2); font-size: 13px; padding: 5px var(--space-3); }
+    .resource-label { font-size: 11px; }
+    .resource-value { font-size: 15px; }
+    #resource-bar .pressure-track { width: 48px; }
+
+    /* 状态区：竖向排列，VS 横置 */
+    #status-area { flex-direction: column; gap: var(--space-2); }
+    .status-vs { transform: rotate(0); font-size: 14px; }
+
+    /* 叙事卡：缩小字号行高 */
+    .narrative-card p { font-size: 15px; line-height: 2; }
+    .narrative-card { padding: var(--space-3); }
+
+    /* 技能槽：2×2 网格 */
+    #skill-slots { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
+    .skill-btn { min-width: 0; padding: 7px 10px; }
+    .skill-btn .skill-desc { font-size: 11px; max-width: none; }
+
+    /* 操作区按钮缩小 */
+    #action-area button { padding: 8px 16px; font-size: 14px; }
+    .mode-btn { padding: 5px 10px; font-size: 12px; }
+
+    /* 横幅缩小 */
+    .banner-text { font-size: 20px; padding: 12px 20px; }
+
+    /* 地图节点缩小 */
+    .map-node { width: 52px; height: 52px; }
+    .map-node .node-icon { font-size: 18px; }
+    .map-node .node-label { font-size: 10px; }
+    .map-node.node-boss { width: 60px; height: 60px; }
+
+    /* 词块间距略增，避免误触 */
+    .token { margin: 0 3px; padding: 3px 7px; }
+
+    /* 浮层面板缩小内边距 */
+    #map-panel, #event-panel, #reward-panel, #inventory-panel { padding: var(--space-4) 18px; }
+    #map-panel { max-width: 96%; }
+
+    /* 选中提示条全宽 */
+    #inv-selection-hint { width: calc(100% - 16px); left: 8px; transform: none; }
+}
+
+@media (max-width: 380px) {
+    #game-container { padding: 12px 10px 16px; }
+    .narrative-card p { font-size: 14px; line-height: 1.9; }
+}
+
+/* =============================================================
+   新手引导浮层
+   ============================================================= */
+
+#tutorial-overlay {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: var(--overlay-bg);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 95;
+    animation: overlay-fade var(--dur-base) var(--ease-out);
+}
+
+#tutorial-panel {
+    background:
+        radial-gradient(circle at 30% 10%, rgba(168, 123, 50, 0.12) 0%, transparent 40%),
+        linear-gradient(160deg, var(--paper-1), var(--paper-3));
+    border: 1px solid var(--gold);
+    border-radius: var(--radius-lg);
+    padding: var(--space-5) 32px;
+    max-width: 480px;
+    width: 90%;
+    max-height: 88vh;
+    overflow-y: auto;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 250, 235, 0.5);
+    animation: panel-rise var(--dur-slow) var(--ease-gentle);
+}
+
+#tutorial-panel h2 {
+    color: var(--gold);
+    margin-bottom: var(--space-4);
+    font-size: 22px;
+    letter-spacing: 4px;
+    text-align: center;
+}
+
+.tutorial-content { color: var(--ink-soft); }
+
+.tutorial-intro {
+    font-size: 16px;
+    line-height: 1.9;
+    margin-bottom: var(--space-4);
+    color: var(--ink);
+    text-align: center;
+}
+
+.tutorial-list {
+    list-style: none;
+    padding: 0;
+    margin-bottom: var(--space-4);
+}
+
+.tutorial-list li {
+    font-size: 14px;
+    line-height: 1.9;
+    padding: 5px 0 5px 20px;
+    position: relative;
+    color: var(--ink-soft);
+}
+
+.tutorial-list li::before {
+    content: "◆";
+    position: absolute;
+    left: 0;
+    top: 8px;
+    color: var(--gold);
+    font-size: 9px;
+}
+
+.tutorial-list strong { color: var(--ink); }
+.tutorial-list em { color: var(--ink-faint); font-style: normal; }
+
+.tut-token {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: var(--radius-sm);
+    background: rgba(168, 123, 50, 0.16);
+    border: 1px solid rgba(168, 123, 50, 0.5);
+    color: var(--tok-adj);
+    font-weight: bold;
+    margin: 0 2px;
+}
+
+.res-ink { color: var(--gold); font-weight: bold; }
+.res-mana { color: var(--teal); font-weight: bold; }
+.res-pressure { color: var(--plum); font-weight: bold; }
+.res-crimson { color: var(--crimson); font-weight: bold; }
+
+.tutorial-tip {
+    font-size: 13px;
+    color: var(--ink-soft);
+    text-align: center;
+    padding: var(--space-3);
+    background: var(--paper-3);
+    border-radius: var(--radius);
+    margin-bottom: var(--space-4);
+    line-height: 1.7;
+}
+
+#tutorial-dismiss {
+    display: block;
+    margin: 0 auto;
+    padding: 12px 32px;
+    font-size: 17px;
+    border: 1px solid var(--gold);
+    border-radius: var(--radius);
+    background: linear-gradient(180deg, var(--paper-1), var(--paper-3));
+    color: var(--ink);
+    cursor: pointer;
+    font-family: inherit;
+    font-weight: bold;
+    box-shadow: var(--shadow-card);
+    transition: background var(--dur-base) var(--ease-out),
+                border-color var(--dur-base) var(--ease-out),
+                transform var(--dur-fast) var(--ease-out);
+}
+
+#tutorial-dismiss:hover {
+    background: linear-gradient(180deg, #f3e8cf, var(--paper-2));
+    border-color: var(--gold-bright);
+    transform: translateY(-1px);
+}
+
+#tutorial-dismiss:focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 2px;
 }
