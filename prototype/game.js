@@ -4,6 +4,10 @@
 // Full juice pass: animations, feedback, step-by-step combat
 // ============================================
 
+// 无障碍：尊重系统"减弱动态效果"。CSS @media 只覆盖 CSS 动画，
+// JS 驱动的飞行/粒子/震屏/浮动数字需在此处守卫。
+const REDUCED_MOTION = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
 // =============================================================
 // DATA TABLES
 // =============================================================
@@ -378,14 +382,14 @@ const RELIC_POOL = {
 // =============================================================
 
 const INTENT_TYPES = {
-    attack:  { icon: "⚔️", label: "攻击", color: "#ff6060" },
-    defend:  { icon: "🛡️", label: "防御", color: "#80c0ff" },
-    lock:    { icon: "🔒", label: "锁定", color: "#c080ff" },
-    buff:    { icon: "⬆️", label: "强化", color: "#ffb060" },
-    cleanse: { icon: "✨", label: "净化", color: "#80ff90" },
-    poison:  { icon: "☠️", label: "淬毒", color: "#80ff80" },
-    seal:    { icon: "🚫", label: "封印", color: "#ff80c0" },
-    devour:  { icon: "👁️", label: "吞噬", color: "#c060c0" },
+    attack:  { icon: "⚔️", label: "攻击", color: "var(--crimson)", type: "attack" },
+    defend:  { icon: "🛡️", label: "防御", color: "var(--teal)", type: "defend" },
+    lock:    { icon: "🔒", label: "锁定", color: "var(--plum)", type: "lock" },
+    buff:    { icon: "⬆️", label: "强化", color: "var(--gold)", type: "buff" },
+    cleanse: { icon: "✨", label: "净化", color: "var(--teal)", type: "cleanse" },
+    poison:  { icon: "☠️", label: "淬毒", color: "var(--plum)", type: "poison" },
+    seal:    { icon: "🚫", label: "封印", color: "var(--plum)", type: "seal" },
+    devour:  { icon: "👁️", label: "吞噬", color: "var(--crimson)", type: "devour" },
 };
 
 function rollEnemyIntent() {
@@ -568,11 +572,27 @@ function updatePressureVisuals() {
         valueEl.textContent = gameState.pressure + "/" + PRESSURE_CONFIG.maxPressure;
     }
 
-    // Darken game background based on pressure
+    // Ink-bleed edge effect: set body class based on pressure stage
+    const body = document.body;
+    body.classList.remove("pressure-stage-safe", "pressure-stage-noise", "pressure-stage-corrupt", "pressure-stage-lock", "pressure-stage-max");
+
+    if (gameState.pressure >= 20) {
+        body.classList.add("pressure-stage-max");
+    } else if (gameState.pressure >= 15) {
+        body.classList.add("pressure-stage-lock");
+    } else if (gameState.pressure >= 10) {
+        body.classList.add("pressure-stage-corrupt");
+    } else if (gameState.pressure >= 5) {
+        body.classList.add("pressure-stage-noise");
+    } else {
+        body.classList.add("pressure-stage-safe");
+    }
+
+    // Subtle darken on game container
     const container = document.getElementById("game-container");
     if (container) {
-        const darkness = ratio * 0.3; // max 30% darker
-        container.style.filter = ratio > 0 ? `brightness(${1 - darkness}) saturate(${1 - ratio * 0.2})` : "";
+        const darkness = ratio * 0.12;
+        container.style.filter = ratio > 0 ? `brightness(${1 - darkness})` : "";
     }
 }
 
@@ -590,11 +610,11 @@ const REWARD_TEMPLATES = [
 // =============================================================
 
 const NODE_TYPES = {
-    battle:  { icon: "⚔️", label: "战斗", color: "#ff6060" },
-    elite:   { icon: "💀", label: "精英", color: "#c080ff" },
-    event:   { icon: "❓", label: "事件", color: "#80c0ff" },
-    rest:    { icon: "🏕️", label: "休息", color: "#80ff90" },
-    boss:    { icon: "👹", label: "Boss", color: "#ff4040" },
+    battle:  { icon: "⚔️", label: "战斗", color: "var(--crimson)" },
+    elite:   { icon: "💀", label: "精英", color: "var(--plum)" },
+    event:   { icon: "❓", label: "事件", color: "var(--teal)" },
+    rest:    { icon: "🏕️", label: "休息", color: "var(--teal)" },
+    boss:    { icon: "👹", label: "Boss", color: "var(--crimson)" },
 };
 
 const BOSS_ENEMY = { name: "巨龙", hp: 35, weaponAdj: "燃烧的", weaponNoun: "龙爪", baseDamage: 10, intentWeights: { attack: 5, defend: 2, lock: 2, buff: 2, cleanse: 1 } };
@@ -876,34 +896,136 @@ function renderMap() {
 
     const currentLayer = gameState.currentLayer;
     const lastVisitedNode = gameState.lastVisitedNode; // { layer, index }
+    const totalLayers = gameState.map.length;
 
-    // Render from bottom (layer 0) to top (boss)
-    // But display top-to-bottom in DOM (boss at top, start at bottom) or bottom-to-top
-    // Let's render top = boss, bottom = start (like Slay the Spire)
-    for (let layerIdx = gameState.map.length - 1; layerIdx >= 0; layerIdx--) {
-        const layer = gameState.map[layerIdx];
-        const layerDiv = document.createElement("div");
-        layerDiv.className = "map-layer";
+    // ---- Horizontal layout (Slay-the-Spire style) ----
+    // Each layer is a COLUMN, laid out left -> right (start at left, boss at right).
+    // Nodes within a column are stacked vertically and centered.
+    // An SVG layer underneath draws the connection paths node-to-node.
 
-        // Layer label
-        const layerLabel = document.createElement("div");
-        layerLabel.className = "map-layer-label";
-        if (layerIdx === gameState.map.length - 1) {
-            layerLabel.textContent = "Boss";
-        } else {
-            layerLabel.textContent = `${layerIdx + 1}`;
+    // Geometry (kept in JS so SVG lines match the DOM exactly)
+    const COL_GAP = 96;     // horizontal distance between layer columns
+    const ROW_GAP = 86;     // vertical distance between nodes in a column
+    const NODE = 64;        // node box size (square)
+    const PAD = 28;         // inner padding around the whole graph
+
+    // Compute the max column height so we can vertically center every column
+    let maxNodes = 1;
+    for (const layer of gameState.map) maxNodes = Math.max(maxNodes, layer.length);
+    const graphHeight = (maxNodes - 1) * ROW_GAP + NODE;
+    const graphWidth = (totalLayers - 1) * COL_GAP + NODE;
+
+    // Helper: pixel center of a node
+    function nodeCenter(layerIdx, nodeIdx, layerLen) {
+        const colCount = layerLen;
+        const colHeight = (colCount - 1) * ROW_GAP;
+        const yStart = PAD + (graphHeight - colHeight - NODE) / 2 + NODE / 2;
+        return {
+            x: PAD + layerIdx * COL_GAP + NODE / 2,
+            y: yStart + nodeIdx * ROW_GAP,
+        };
+    }
+
+    // The scroll wrapper sizes itself to the graph
+    const graph = document.createElement("div");
+    graph.className = "map-graph";
+    graph.style.width = (graphWidth + PAD * 2) + "px";
+    graph.style.height = (graphHeight + PAD * 2) + "px";
+
+    // 1) SVG connection layer (drawn first, sits behind nodes)
+    const svgNS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(svgNS, "svg");
+    svg.setAttribute("class", "map-edges");
+    svg.setAttribute("width", graphWidth + PAD * 2);
+    svg.setAttribute("height", graphHeight + PAD * 2);
+
+    // Track which edges are part of the player's traveled path
+    const traveledEdges = new Set();
+    if (gameState.lastVisitedNode) {
+        // Walk backwards through visited nodes to build the traveled path
+        let cur = gameState.lastVisitedNode;
+        const pathNodes = [];
+        while (cur) {
+            pathNodes.unshift(cur);
+            // Find previous node: must be in prev layer, visited, and have connection to cur
+            if (cur.layer > 0) {
+                const prevLayer = gameState.map[cur.layer - 1];
+                let found = false;
+                for (let i = 0; i < prevLayer.length; i++) {
+                    if (prevLayer[i].visited && prevLayer[i].connections.includes(cur.index)) {
+                        traveledEdges.add(`${cur.layer - 1}-${i}-${cur.index}`);
+                        cur = { layer: cur.layer - 1, index: i };
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) cur = null;
+            } else {
+                cur = null;
+            }
         }
-        layerDiv.appendChild(layerLabel);
+    }
 
-        const nodesDiv = document.createElement("div");
-        nodesDiv.className = "map-nodes";
-
+    for (let layerIdx = 0; layerIdx < totalLayers - 1; layerIdx++) {
+        const layer = gameState.map[layerIdx];
+        const nextLayer = gameState.map[layerIdx + 1];
         layer.forEach((node, nodeIdx) => {
+            const from = nodeCenter(layerIdx, nodeIdx, layer.length);
+            node.connections.forEach((targetIdx) => {
+                if (targetIdx >= nextLayer.length) return;
+                const to = nodeCenter(layerIdx + 1, targetIdx, nextLayer.length);
+
+                // Determine edge class
+                let edgeClass = "edge";
+                const edgeKey = `${layerIdx}-${nodeIdx}-${targetIdx}`;
+                const isTraveled = traveledEdges.has(edgeKey);
+
+                if (isTraveled) {
+                    edgeClass += " edge-traveled";
+                } else if (
+                    lastVisitedNode &&
+                    lastVisitedNode.layer === layerIdx &&
+                    lastVisitedNode.index === nodeIdx &&
+                    layerIdx + 1 === currentLayer
+                ) {
+                    // Edges leading to currently-choosable nodes
+                    edgeClass += " edge-open";
+                } else if (!node.visited) {
+                    // Unreachable edges are nearly invisible
+                    edgeClass += " edge-hidden";
+                }
+
+                const path = document.createElementNS(svgNS, "path");
+                // Lines start at right edge of source, end at left edge of target
+                // so they never pass inside the node squares
+                const startX = from.x + NODE / 2;
+                const startY = from.y;
+                const endX = to.x - NODE / 2;
+                const endY = to.y;
+                const midX = (startX + endX) / 2;
+                const d = `M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`;
+                path.setAttribute("d", d);
+                path.setAttribute("class", edgeClass);
+                svg.appendChild(path);
+            });
+        });
+    }
+    graph.appendChild(svg);
+
+    // 2) Node buttons (absolute positioned on top of the SVG)
+    for (let layerIdx = 0; layerIdx < totalLayers; layerIdx++) {
+        const layer = gameState.map[layerIdx];
+        layer.forEach((node, nodeIdx) => {
+            const c = nodeCenter(layerIdx, nodeIdx, layer.length);
             const nodeEl = document.createElement("button");
-            nodeEl.className = "map-node";
+            nodeEl.className = "map-node node-" + node.type;
+            nodeEl.style.left = (c.x - NODE / 2) + "px";
+            nodeEl.style.top = (c.y - NODE / 2) + "px";
+
             const info = NODE_TYPES[node.type];
-            nodeEl.innerHTML = `<span class="node-icon">${info.icon}</span><span class="node-label">${info.label}</span>`;
-            nodeEl.style.borderColor = info.color;
+            nodeEl.innerHTML =
+                `<span class="node-icon">${info.icon}</span>` +
+                `<span class="node-label">${info.label}</span>`;
 
             if (node.visited) {
                 nodeEl.classList.add("node-visited");
@@ -916,12 +1038,18 @@ function renderMap() {
                 nodeEl.disabled = true;
             }
 
-            nodesDiv.appendChild(nodeEl);
+            graph.appendChild(nodeEl);
         });
-
-        layerDiv.appendChild(nodesDiv);
-        mapContainer.appendChild(layerDiv);
     }
+
+    mapContainer.appendChild(graph);
+
+    // Auto-scroll so the current frontier is comfortably in view
+    requestAnimationFrame(() => {
+        const focusLayer = Math.min(currentLayer, totalLayers - 1);
+        const targetX = PAD + focusLayer * COL_GAP;
+        mapContainer.scrollLeft = Math.max(0, targetX - mapContainer.clientWidth / 2 + NODE / 2);
+    });
 }
 
 // Determine if a node is reachable from current position
@@ -1077,6 +1205,28 @@ function startBattleFromMap(difficulty) {
 
     rollEnemyIntent();
     render();
+
+    // 首场战斗显示一次性新手引导
+    if (gameState.battleNumber === 1 && !gameState.tutorialShown) {
+        gameState.tutorialShown = true;
+        setTimeout(showTutorial, 300);
+    }
+
+    // 首回合给可拖词块一次性 staggered 引导脉冲，让玩家发现"这些字能拖"
+    if (gameState.round === 1) {
+        setTimeout(() => {
+            const draggables = domTokenEls.filter(el =>
+                el.dataset.tokenId !== "swap-count" && // 资源条数字除外
+                el.style.cursor === "grab"
+            );
+            draggables.forEach((el, i) => {
+                setTimeout(() => {
+                    el.classList.add("intro-pulse");
+                    setTimeout(() => el.classList.remove("intro-pulse"), 950);
+                }, i * 90);
+            });
+        }, 400);
+    }
 }
 
 function startEvent() {
@@ -1335,14 +1485,15 @@ function calculatePlayerDamage() {
 function executeEnemyIntent() {
     const intent = gameState.enemyIntent;
     if (!intent) {
-        // Fallback: basic attack
+        // Fallback: basic attack with animation
         var enemyDamage = calculateEnemyDamage();
         var oldHp = parseInt(TV("player-hp"));
         T("player-hp").value = String(Math.max(0, oldHp - enemyDamage));
         addLog(TV("enemy-name") + "对你造成了" + enemyDamage + "点伤害", "log-damage");
         render();
-        showFloatingNumber(document.getElementById("player-hp"), enemyDamage, "damage");
-        screenShake();
+        animateEnemyAttack(() => {
+            showFloatingNumber(document.getElementById("player-hp"), enemyDamage, "damage");
+        });
         return;
     }
 
@@ -1355,8 +1506,9 @@ function executeEnemyIntent() {
             T("player-hp").value = String(Math.max(0, oldHp - damage));
             addLog(enemyName + "发动攻击，对你造成了" + damage + "点伤害", "log-damage");
             render();
-            showFloatingNumber(document.getElementById("player-hp"), damage, "damage");
-            screenShake();
+            animateEnemyAttack(() => {
+                showFloatingNumber(document.getElementById("player-hp"), damage, "damage");
+            });
             break;
         }
         case "defend": {
@@ -1591,8 +1743,12 @@ function renderRelicBar() {
         // Create the relic bar if it doesn't exist
         relicBar = document.createElement("div");
         relicBar.id = "relic-bar";
-        const gameContainer = document.getElementById("game-container") || document.querySelector(".container");
-        if (gameContainer) {
+        const resourceBar = document.getElementById("resource-bar");
+        const gameContainer = document.getElementById("game-container");
+        if (gameContainer && resourceBar) {
+            // Insert after resource bar
+            gameContainer.insertBefore(relicBar, resourceBar.nextSibling);
+        } else if (gameContainer) {
             gameContainer.insertBefore(relicBar, gameContainer.firstChild);
         }
     }
@@ -1605,9 +1761,163 @@ function renderRelicBar() {
     relicBar.style.display = "flex";
     relicBar.innerHTML = gameState.relics.map(id => {
         const r = RELIC_DB[id];
-        return `<span class="relic-icon">${r.icon}<span class="relic-tooltip"><span class="relic-tooltip-name">${r.name}</span><span class="relic-tooltip-desc">${r.description}</span></span></span>`;
+        return `<span class="relic-icon" data-relic-id="${id}" tabindex="0" role="button" aria-label="遗物：${r.name}。${r.description}">${r.icon}<span class="relic-tooltip"><span class="relic-tooltip-name">${r.name}</span><span class="relic-tooltip-desc">${r.description}</span></span></span>`;
     }).join("");
+
+    // 触屏/键盘可达性：click 切换 tooltip 显隐（桌面仍保留 :hover）。
+    // 移动端无 hover，原本完全无法查看遗物效果。
+    relicBar.querySelectorAll(".relic-icon").forEach(icon => {
+        icon.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const wasOpen = icon.classList.contains("open");
+            relicBar.querySelectorAll(".relic-icon.open").forEach(el => el.classList.remove("open"));
+            if (!wasOpen) icon.classList.add("open");
+        });
+        icon.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                icon.click();
+            }
+        });
+    });
+
+    // 点击遗物图标以外的区域收起所有 tooltip（只绑一次）
+    if (!relicBar._docClickBound) {
+        relicBar._docClickBound = true;
+        document.addEventListener("click", (e) => {
+            if (!e.target.closest(".relic-icon")) {
+                relicBar.querySelectorAll(".relic-icon.open").forEach(el => el.classList.remove("open"));
+            }
+        });
+    }
 }
+
+// =============================================================
+// ANIMATION ENGINE — lightweight sequence/timeline system
+// =============================================================
+
+const Anim = {
+    // Run a sequence of steps with configurable delays
+    sequence(steps, defaultDelay = 500) {
+        return new Promise(resolve => {
+            let i = 0;
+            function next() {
+                if (i >= steps.length) { resolve(); return; }
+                const step = steps[i++];
+                const delay = step.delay !== undefined ? step.delay : defaultDelay;
+                const result = step.fn();
+                if (result instanceof Promise) {
+                    result.then(() => setTimeout(next, delay));
+                } else {
+                    setTimeout(next, delay);
+                }
+            }
+            next();
+        });
+    },
+
+    // Animate an element along a bezier curve path (for swap flight)
+    flyAlong(el, fromX, fromY, toX, toY, options = {}) {
+        const duration = options.duration || 350;
+        const arcHeight = options.arc || Math.min(40, Math.abs(toX - fromX) * 0.3 + 15);
+
+        // Set initial position
+        el.style.left = fromX + 'px';
+        el.style.top = fromY + 'px';
+
+        // 减弱动态：直接瞬移到终点，不做飞行
+        if (REDUCED_MOTION) {
+            el.style.left = toX + 'px';
+            el.style.top = toY + 'px';
+            return Promise.resolve();
+        }
+
+        // Calculate control point for quadratic bezier (arc)
+        const midX = (fromX + toX) / 2;
+        const midY = Math.min(fromY, toY) - arcHeight;
+
+        return new Promise(resolve => {
+            const startTime = performance.now();
+
+            function tick(now) {
+                const elapsed = now - startTime;
+                let t = Math.min(elapsed / duration, 1);
+                // Apply easing (ease-out cubic)
+                t = t < 1 ? 1 - Math.pow(1 - t, 3) : 1;
+
+                // Quadratic bezier interpolation
+                const x = (1 - t) * (1 - t) * fromX + 2 * (1 - t) * t * midX + t * t * toX;
+                const y = (1 - t) * (1 - t) * fromY + 2 * (1 - t) * t * midY + t * t * toY;
+
+                el.style.left = x + 'px';
+                el.style.top = y + 'px';
+
+                // Scale: start big, end normal; slight rotation for dynamism
+                const scale = 1 + (1 - t) * 0.15;
+                const rotate = (1 - t) * (fromX < toX ? -3 : 3);
+                el.style.transform = `translate(-50%, -50%) scale(${scale}) rotate(${rotate}deg)`;
+
+                if (t < 1) {
+                    requestAnimationFrame(tick);
+                } else {
+                    resolve();
+                }
+            }
+            requestAnimationFrame(tick);
+        });
+    },
+
+    // Spawn ink particles at a position
+    spawnParticles(x, y, count = 6, color = null) {
+        if (REDUCED_MOTION) return; // 减弱动态：不生成粒子
+        for (let i = 0; i < count; i++) {
+            const particle = document.createElement('div');
+            particle.className = 'ink-particle';
+            if (color) particle.style.background = color;
+
+            const angle = (Math.PI * 2 / count) * i + (Math.random() - 0.5) * 0.8;
+            const dist = 12 + Math.random() * 20;
+            const px = Math.cos(angle) * dist;
+            const py = Math.sin(angle) * dist;
+
+            particle.style.left = x + 'px';
+            particle.style.top = y + 'px';
+            particle.style.setProperty('--px', px + 'px');
+            particle.style.setProperty('--py', py + 'px');
+            particle.style.width = (3 + Math.random() * 3) + 'px';
+            particle.style.height = particle.style.width;
+
+            document.body.appendChild(particle);
+            setTimeout(() => particle.remove(), 550);
+        }
+    },
+
+    // Create a ripple effect at an element's position
+    rippleAt(el) {
+        const rect = el.getBoundingClientRect();
+        const container = el.closest('.text-area') || el.parentElement;
+        const containerRect = container.getBoundingClientRect();
+
+        const ripple = document.createElement('div');
+        ripple.className = 'swap-ripple';
+        ripple.style.width = '30px';
+        ripple.style.height = '30px';
+        ripple.style.left = (rect.left - containerRect.left + rect.width / 2 - 15) + 'px';
+        ripple.style.top = (rect.top - containerRect.top + rect.height / 2 - 15) + 'px';
+
+        container.style.position = 'relative';
+        container.appendChild(ripple);
+        setTimeout(() => ripple.remove(), 650);
+    },
+
+    // Apply a CSS animation class and auto-remove
+    flash(el, className, duration = 450) {
+        el.classList.remove(className);
+        void el.offsetWidth; // force reflow
+        el.classList.add(className);
+        setTimeout(() => el.classList.remove(className), duration);
+    }
+};
 
 // =============================================================
 // FEEDBACK SYSTEM: floating numbers, banners, screen shake
@@ -1615,21 +1925,34 @@ function renderRelicBar() {
 
 function showFloatingNumber(targetEl, amount, type) {
     const rect = targetEl.getBoundingClientRect();
-    const container = document.getElementById("game-container");
-    const containerRect = container.getBoundingClientRect();
 
     const floater = document.createElement("span");
     floater.className = "float-number " + type;
     floater.textContent = type === "damage" ? ("-" + amount) : ("+" + amount);
-    floater.style.left = (rect.left - containerRect.left + rect.width / 2) + "px";
-    floater.style.top = (rect.top - containerRect.top) + "px";
 
-    container.appendChild(floater);
-    setTimeout(function() { floater.remove(); }, 1000);
+    // 用 viewport 坐标 + fixed 定位，挂到 body。
+    // 这样震屏（作用在 #game-container）时浮动数字不跟着抖，受击瞬间更易读。
+    const offsetX = (Math.random() - 0.5) * 20;
+    floater.style.position = "fixed";
+    floater.style.left = (rect.left + rect.width / 2 + offsetX) + "px";
+    floater.style.top = (rect.top - 5) + "px";
+
+    document.body.appendChild(floater);
+    setTimeout(function() { floater.remove(); }, 1300);
+
+    // Also pulse the value itself
+    Anim.flash(targetEl, "value-pulse", 380);
+}
+
+// 减弱动态：浮动数字退化为瞬时数值脉冲（仍显示伤害量，但不做上浮动画）
+if (REDUCED_MOTION) {
+    showFloatingNumber = function() {
+        Anim.flash(arguments[0], "value-pulse", 380);
+    };
 }
 
 function showBanner(text, styleClass, duration) {
-    duration = duration || 1400;
+    duration = duration || 1800;
     const overlay = document.getElementById("banner-overlay");
     const banner = document.createElement("div");
     banner.className = "banner-text " + styleClass;
@@ -1638,10 +1961,38 @@ function showBanner(text, styleClass, duration) {
     setTimeout(function() { banner.remove(); }, duration);
 }
 
-function screenShake() {
+function screenShake(heavy) {
+    if (REDUCED_MOTION) return; // 减弱动态：跳过震屏
     const container = document.getElementById("game-container");
-    container.classList.add("screen-shake");
-    setTimeout(function() { container.classList.remove("screen-shake"); }, 400);
+    const cls = heavy ? "screen-shake-heavy" : "screen-shake";
+    container.classList.remove("screen-shake", "screen-shake-heavy");
+    void container.offsetWidth;
+    container.classList.add(cls);
+    setTimeout(function() { container.classList.remove(cls); }, heavy ? 550 : 450);
+}
+
+// Enhanced combat animation: enemy attack with windup → strike → impact
+function animateEnemyAttack(callback) {
+    const enemyStatus = document.getElementById("enemy-status");
+    const playerStatus = document.getElementById("player-status");
+
+    if (!enemyStatus || !playerStatus) { if (callback) callback(); return; }
+
+    // Phase 1: Windup (pull back)
+    Anim.flash(enemyStatus, "enemy-windup", 320);
+
+    setTimeout(() => {
+        // Phase 2: Strike (lunge forward)
+        Anim.flash(enemyStatus, "enemy-strike", 220);
+
+        setTimeout(() => {
+            // Phase 3: Impact on player
+            Anim.flash(playerStatus, "player-hit", 420);
+            screenShake(false);
+
+            if (callback) callback();
+        }, 150);
+    }, 280);
 }
 
 function updateEffectsBar() {
@@ -1668,13 +2019,13 @@ function updateEffectsBar() {
     }
     if (gameState.enemyVulnerable > 0) {
         const tag = document.createElement("span");
-        tag.className = "effect-tag burn";
-        tag.textContent = "🎯 弱点暴露 (" + gameState.enemyVulnerable + "回合)";
+        tag.className = "effect-tag vulnerable";   // 作用于敌人的减益，不再复用 burn
+        tag.textContent = "🎯 敌:弱点暴露 (" + gameState.enemyVulnerable + "回合)";
         bar.appendChild(tag);
     }
     if (gameState.playerDefense > 0) {
         const tag = document.createElement("span");
-        tag.className = "effect-tag frozen";
+        tag.className = "effect-tag shield";        // 玩家增益，不再复用 frozen
         tag.textContent = "🛡️ 格挡 (-" + gameState.playerDefense + ")";
         bar.appendChild(tag);
     }
@@ -1794,17 +2145,20 @@ function renderSkillArea() {
     const skillArea = document.getElementById("skill-area");
     if (!skillArea) return;
 
+    // Update mana display in resource bar
+    const manaVal = document.getElementById("mana-value");
+    if (manaVal) manaVal.textContent = gameState.mana;
+    const manaMax = document.getElementById("mana-max");
+    if (manaMax) manaMax.textContent = gameState.maxMana;
+    const manaRegen = document.getElementById("mana-regen");
+    if (manaRegen) manaRegen.textContent = gameState.manaRegen;
+
     // Only show skill area during battle
     if (gameState.phase !== "battle") {
         skillArea.style.display = "none";
         return;
     }
     skillArea.style.display = "flex";
-
-    // Update mana display
-    document.getElementById("mana-value").textContent = gameState.mana;
-    document.getElementById("mana-max").textContent = gameState.maxMana;
-    document.getElementById("mana-regen").textContent = gameState.manaRegen;
 
     // Render skill slots
     const slotsEl = document.getElementById("skill-slots");
@@ -1888,7 +2242,7 @@ function setMode(mode) {
     }
 
     // Update body class for cursor styling
-    document.body.classList.remove("mode-swap", "mode-delete");
+    document.body.classList.remove("mode-swap", "mode-insert", "mode-delete");
     document.body.classList.add("mode-" + mode);
 
     // Clear inventory selection when entering delete mode
@@ -1910,16 +2264,66 @@ function toggleMode(mode) {
     }
 }
 
+// 添加模式：从词块库选词填入空槽。显式入口，让玩家知道这个能力存在。
+// 进入后高亮所有空槽（.mode-insert .token-empty 脉动）并打开词块库供选词。
+function toggleInsert() {
+    if (gameState.turnInProgress) return;
+
+    // 再次点击退出
+    if (gameState.mode === "insert") {
+        setMode("swap");
+        return;
+    }
+
+    if (gameState.emptySlots.length === 0) {
+        addLog("暂无空槽可填入。先用「✕ 删除」抹除一个词块来腾出空槽。", "log-info");
+        showBanner("⚠️ 暂无空槽", "banner-pressure");
+    } else {
+        addLog("＋ 添加模式：从词块库选一个词，再点击高亮的空槽填入（消耗 1 笔力）", "log-info");
+    }
+
+    setMode("insert");
+
+    // 打开词块库供选词（若尚未打开）
+    const overlay = document.getElementById("inventory-overlay");
+    if (overlay.style.display !== "flex") {
+        renderInventory();
+        overlay.style.display = "flex";
+    }
+}
+
 // =============================================================
 // INVENTORY SYSTEM — collected word tokens
 // =============================================================
 
 function toggleInventory() {
+    if (gameState.turnInProgress) return; // 结算期间禁止打开词块库，避免状态错乱
     const overlay = document.getElementById("inventory-overlay");
     const isVisible = overlay.style.display !== "none";
     overlay.style.display = isVisible ? "none" : "flex";
     if (!isVisible) {
         renderInventory();
+    }
+}
+
+// 取消词块库选中态（关闭常驻提示条）
+function cancelInventorySelection() {
+    gameState.selectedInventoryToken = null;
+    updateInvSelectionHint();
+    render();
+}
+
+// 更新选中态常驻提示条
+function updateInvSelectionHint() {
+    const hint = document.getElementById("inv-selection-hint");
+    const text = document.getElementById("inv-selection-text");
+    if (!hint || !text) return;
+    if (gameState.selectedInventoryToken) {
+        const item = gameState.inventory.find(i => i.id === gameState.selectedInventoryToken);
+        text.textContent = "已选中「" + (item ? item.value : "") + "」— 点击同色词块填入/交换";
+        hint.style.display = "flex";
+    } else {
+        hint.style.display = "none";
     }
 }
 
@@ -1959,6 +2363,7 @@ function selectInventoryToken(invId) {
         // Deselect
         gameState.selectedInventoryToken = null;
         renderInventory();
+        updateInvSelectionHint();
         return;
     }
     gameState.selectedInventoryToken = invId;
@@ -1968,6 +2373,7 @@ function selectInventoryToken(invId) {
     overlay.style.display = "none";
     const invItem = gameState.inventory.find(i => i.id === invId);
     addLog(`选中词块「${invItem?.value}」，点击句子中同类型词块完成交换`, "log-info");
+    updateInvSelectionHint();
     // Re-render to show compatible targets
     render();
 }
@@ -2046,9 +2452,9 @@ function handleDeleteClick(tokenId) {
     syncDerivedTokens();
     checkCombos();
 
-    // Auto-return to default mode
-    setMode("swap");
+    // 留在删除模式，便于连续删除（再次点「✕ 删除」按钮退出）。不自动切回 swap。
     flashToken(tokenId);
+    addLog("💡 出现了空槽，点「＋ 添加」可从词块库填入新词", "log-info");
 }
 
 // =============================================================
@@ -2120,40 +2526,38 @@ function handleInventorySwapClick(tokenId) {
     syncDerivedTokens();
     checkCombos();
 
+    updateInvSelectionHint();
     render();
     flashToken(tokenId);
 }
 
 // =============================================================
-// DRAG & DROP
+// DRAG & DROP — with rich animation feedback
 // =============================================================
 
 let domTokenEls = [];   // all token DOM elements in current render
 let dragInfo = {
     el: null,
     clone: null,
-    sourceRect: null,    // original position of source element (for fly-back anim)
+    sourceRect: null,
+    lastTarget: null,    // track last hovered target for haptic-like feedback
 };
 let swapAnimating = false;  // lock during animation
 
 function onDragStart(e, el) {
     if (swapAnimating || gameState.turnInProgress) return;
-    if (dragInfo.el) return; // guard against re-entry from multi-touch
-    if (gameState.mode !== "swap") return; // Only drag in swap mode
+    if (dragInfo.el) return;
+    if (gameState.mode !== "swap") return;
 
     const tokenId = el.dataset.tokenId;
     const token = T(tokenId);
     if (!token || !token.swappable) return;
 
-    // Check swap count (read from pool)
+    // Check swap count
     const swapCountVal = parseInt(TV("swap-count")) || 0;
     if (swapCountVal <= 0) {
-        // Shake the swap counter to indicate no swaps left
         const scEl = document.getElementById("swap-count");
-        scEl.classList.remove("swap-count-shake");
-        void scEl.offsetWidth; // force reflow
-        scEl.classList.add("swap-count-shake");
-        setTimeout(function() { scEl.classList.remove("swap-count-shake"); }, 500);
+        Anim.flash(scEl, "swap-count-shake", 500);
         return;
     }
 
@@ -2161,23 +2565,30 @@ function onDragStart(e, el) {
 
     dragInfo.el = el;
     dragInfo.sourceRect = el.getBoundingClientRect();
+    dragInfo.lastTarget = null;
 
+    // Create floating clone with pickup animation
     const clone = el.cloneNode(true);
     clone.classList.add("drag-clone");
     clone.style.left = e.clientX + "px";
     clone.style.top = e.clientY + "px";
+    // Pickup: start from element position, scale up
+    clone.style.transition = "transform 150ms cubic-bezier(0.34, 1.2, 0.64, 1)";
     document.body.appendChild(clone);
     dragInfo.clone = clone;
 
+    // Source element fades out
     el.classList.add("dragging-source");
 
-    // Highlight compatible targets (including empty slots of same type)
+    // Highlight compatible targets with staggered animation
+    let delay = 0;
     domTokenEls.forEach(t => {
         const tid = t.dataset.tokenId;
         const tt = T(tid);
         if (tt && tt.id !== tokenId && tt.type === token.type) {
             if (tt.swappable || tt.isEmpty) {
-                t.classList.add("compatible");
+                setTimeout(() => t.classList.add("compatible"), delay);
+                delay += 30; // stagger for wave effect
             }
         }
     });
@@ -2190,21 +2601,61 @@ function onDragStart(e, el) {
 }
 
 // Touch event wrappers
+// 触摸用"位移阈值"判断意图：touchstart 不立即 preventDefault，
+// touchmove 位移超阈值才判定为拖拽（否则放行给浏览器滚动），
+// 避免在文字密集区按下词块就吃掉页面滚动。
+let touchPending = null; // { el, startX, startY }
+
 function onTouchStart(e, el) {
     if (e.touches.length !== 1) return;
     const touch = e.touches[0];
-    onDragStart({ clientX: touch.clientX, clientY: touch.clientY, preventDefault: () => e.preventDefault() }, el);
+    // 若已在拖拽中，不重复启动
+    if (dragInfo.el) return;
+    // 记录待判定起点，暂不 preventDefault（让浏览器可滚动）
+    touchPending = { el, startX: touch.clientX, startY: touch.clientY };
+    // 仍监听 move/end，以便位移超阈值时启动拖拽
+    document.addEventListener("touchmove", onTouchMove, { passive: false });
+    document.addEventListener("touchend", onTouchEnd);
+    document.addEventListener("touchcancel", onTouchEnd);
 }
 
 function onTouchMove(e) {
-    if (!dragInfo.clone) return;
-    e.preventDefault();
     const touch = e.touches[0];
-    onDragMove({ clientX: touch.clientX, clientY: touch.clientY });
+    if (!touch) return;
+
+    // 已进入拖拽：跟随移动
+    if (dragInfo.clone) {
+        e.preventDefault();
+        onDragMove({ clientX: touch.clientX, clientY: touch.clientY });
+        return;
+    }
+
+    // 待判定：位移超阈值才启动拖拽
+    if (touchPending) {
+        const dx = touch.clientX - touchPending.startX;
+        const dy = touch.clientY - touchPending.startY;
+        if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+            const el = touchPending.el;
+            touchPending = null;
+            // 启动拖拽（内部会 preventDefault 并建克隆体）
+            onDragStart({ clientX: touch.clientX, clientY: touch.clientY, preventDefault: () => e.preventDefault() }, el);
+            if (dragInfo.clone) {
+                e.preventDefault();
+                onDragMove({ clientX: touch.clientX, clientY: touch.clientY });
+            }
+        }
+        // 位移未超阈值：不 preventDefault，放行滚动
+    }
 }
 
 function onTouchEnd(e) {
-    if (!dragInfo.el) return;
+    touchPending = null;
+    if (!dragInfo.el) {
+        document.removeEventListener("touchmove", onTouchMove);
+        document.removeEventListener("touchend", onTouchEnd);
+        document.removeEventListener("touchcancel", onTouchEnd);
+        return;
+    }
     const touch = e.changedTouches ? e.changedTouches[0] : null;
     const clientX = touch ? touch.clientX : 0;
     const clientY = touch ? touch.clientY : 0;
@@ -2216,9 +2667,12 @@ function onTouchEnd(e) {
 
 function onDragMove(e) {
     if (!dragInfo.clone) return;
+
+    // Smooth follow with slight lag for weight feel
     dragInfo.clone.style.left = e.clientX + "px";
     dragInfo.clone.style.top = e.clientY + "px";
 
+    // Update drag-over highlights
     domTokenEls.forEach(t => t.classList.remove("drag-over"));
     const target = getTokenElUnder(e);
     if (target && target !== dragInfo.el) {
@@ -2226,7 +2680,20 @@ function onDragMove(e) {
         const tgtToken = T(target.dataset.tokenId);
         if (tgtToken && srcToken && tgtToken.type === srcToken.type && (tgtToken.swappable || tgtToken.isEmpty)) {
             target.classList.add("drag-over");
+            // "Snap" feedback when entering a new valid target
+            if (target !== dragInfo.lastTarget) {
+                dragInfo.lastTarget = target;
+                // Subtle scale pulse on the clone
+                dragInfo.clone.style.transform = "translate(-50%, -50%) scale(1.22) rotate(0deg)";
+                setTimeout(() => {
+                    if (dragInfo.clone) {
+                        dragInfo.clone.style.transform = "";
+                    }
+                }, 120);
+            }
         }
+    } else {
+        dragInfo.lastTarget = null;
     }
 }
 
@@ -2247,7 +2714,7 @@ function onDragEnd(e) {
     const sourceEl = dragInfo.el;
     const sourceRect = dragInfo.sourceRect;
 
-    // Check if valid swap target (includes empty slots of same type)
+    // Check if valid swap target
     let validSwap = false;
     let srcToken = null;
     let tgtToken = null;
@@ -2260,72 +2727,98 @@ function onDragEnd(e) {
     }
 
     if (validSwap) {
-        // --- Animate: B's value flies back to A's original position ---
+        // ===== DUAL-FLIGHT SWAP ANIMATION =====
         swapAnimating = true;
 
-        // Remove the drag clone (A is already "at" B's location conceptually)
-        if (dragInfo.clone) {
-            dragInfo.clone.remove();
-            dragInfo.clone = null;
-        }
-        if (sourceEl) {
-            sourceEl.classList.remove("dragging-source");
-        }
-
-        // Create a "flyback" clone of B that travels to A's position
         const targetRect = target.getBoundingClientRect();
-        const flyback = target.cloneNode(true);
-        flyback.classList.add("flyback-clone");
-        flyback.style.left = targetRect.left + targetRect.width / 2 + "px";
-        flyback.style.top = targetRect.top + targetRect.height / 2 + "px";
-        document.body.appendChild(flyback);
 
-        // Calculate destination (A's original center)
-        const destX = sourceRect.left + sourceRect.width / 2;
-        const destY = sourceRect.top + sourceRect.height / 2;
+        // Remove drag clone immediately
+        if (dragInfo.clone) { dragInfo.clone.remove(); dragInfo.clone = null; }
+        if (sourceEl) sourceEl.classList.remove("dragging-source");
 
-        // Trigger transition on next frame
-        requestAnimationFrame(() => {
-            flyback.style.left = destX + "px";
-            flyback.style.top = destY + "px";
+        // Hide both original elements during flight
+        sourceEl.style.visibility = "hidden";
+        target.style.visibility = "hidden";
+
+        // Create flight clone A (source → target position)
+        const flyA = sourceEl.cloneNode(true);
+        flyA.className = sourceEl.className.replace("dragging-source", "") + " swap-fly-a";
+        document.body.appendChild(flyA);
+
+        // Create flight clone B (target → source position)
+        const flyB = target.cloneNode(true);
+        flyB.className = target.className + " swap-fly-b";
+        document.body.appendChild(flyB);
+
+        // Calculate centers
+        const srcCX = sourceRect.left + sourceRect.width / 2;
+        const srcCY = sourceRect.top + sourceRect.height / 2;
+        const tgtCX = targetRect.left + targetRect.width / 2;
+        const tgtCY = targetRect.top + targetRect.height / 2;
+
+        // Spawn particles at pickup points
+        Anim.spawnParticles(srcCX, srcCY, 4);
+        Anim.spawnParticles(tgtCX, tgtCY, 4);
+
+        // Fly both clones simultaneously along arcs
+        const flightDuration = 220; // 收敛：原 320ms 偏长，连续交换节奏拖沓
+        Promise.all([
+            Anim.flyAlong(flyA, srcCX, srcCY, tgtCX, tgtCY, { duration: flightDuration, arc: 25 }),
+            Anim.flyAlong(flyB, tgtCX, tgtCY, srcCX, srcCY, { duration: flightDuration, arc: 25 }),
+        ]).then(() => {
+            // Remove flight clones
+            flyA.remove();
+            flyB.remove();
+
+            // Perform the actual data swap
+            performSwap(srcToken.id, tgtToken.id);
+
+            // Show elements again (render() will have updated them)
+            sourceEl.style.visibility = "";
+            target.style.visibility = "";
+
+            // Landing effects on the newly rendered elements
+            setTimeout(() => {
+                const newEls = domTokenEls.filter(el =>
+                    el.dataset.tokenId === srcToken.id || el.dataset.tokenId === tgtToken.id
+                );
+                newEls.forEach(el => {
+                    Anim.flash(el, "swap-landed", 280);
+                    Anim.rippleAt(el);
+                });
+                // Particles at landing positions
+                newEls.forEach(el => {
+                    const r = el.getBoundingClientRect();
+                    Anim.spawnParticles(r.left + r.width / 2, r.top + r.height / 2, 5);
+                });
+            }, 20);
+
+            swapAnimating = false;
         });
 
-        // After animation completes, do the actual swap
-        flyback.addEventListener("transitionend", () => {
-            flyback.remove();
-            swapAnimating = false;
-            performSwap(srcToken.id, tgtToken.id);
-        }, { once: true });
-
-        // Safety timeout in case transitionend doesn't fire
-        setTimeout(() => {
-            if (swapAnimating) {
-                flyback.remove();
-                swapAnimating = false;
-                performSwap(srcToken.id, tgtToken.id);
-            }
-        }, 400);
-
     } else {
-        // Invalid drop — bounce clone back to source
+        // Invalid drop — elastic bounce back to source
         if (dragInfo.clone && sourceRect) {
-            var bounceClone = dragInfo.clone;
-            bounceClone.style.transition = "left 0.2s ease, top 0.2s ease, opacity 0.2s ease";
+            const bounceClone = dragInfo.clone;
+            bounceClone.style.transition = "left 250ms cubic-bezier(0.34, 1.2, 0.64, 1), top 250ms cubic-bezier(0.34, 1.2, 0.64, 1), opacity 200ms ease, transform 250ms cubic-bezier(0.34, 1.2, 0.64, 1)";
             bounceClone.style.left = (sourceRect.left + sourceRect.width / 2) + "px";
             bounceClone.style.top = (sourceRect.top + sourceRect.height / 2) + "px";
-            bounceClone.style.opacity = "0";
-            setTimeout(function() { bounceClone.remove(); }, 220);
-        } else if (dragInfo.clone) {
-            dragInfo.clone.remove();
+            bounceClone.style.transform = "translate(-50%, -50%) scale(0.9) rotate(0deg)";
+            bounceClone.style.opacity = "0.3";
+            setTimeout(() => {
+                bounceClone.remove();
+                if (sourceEl) sourceEl.classList.remove("dragging-source");
+            }, 260);
+        } else {
+            if (dragInfo.clone) dragInfo.clone.remove();
+            if (sourceEl) sourceEl.classList.remove("dragging-source");
         }
         dragInfo.clone = null;
-        if (sourceEl) {
-            sourceEl.classList.remove("dragging-source");
-        }
     }
 
     dragInfo.el = null;
     dragInfo.sourceRect = null;
+    dragInfo.lastTarget = null;
 }
 
 function getTokenElUnder(e) {
@@ -2341,6 +2834,89 @@ function getTokenElUnder(e) {
 // =============================================================
 // SWAP LOGIC
 // =============================================================
+
+let keyboardSelected = null; // 键盘选中的源 token id
+
+function tokenTypeLabel(type) {
+    return ({ number: "数字", adjective: "形容词", noun: "名词", subject: "主语" })[type] || type;
+}
+
+function hasCompatibleInventory(tokenId) {
+    if (!gameState.selectedInventoryToken) return false;
+    const invItem = gameState.inventory.find(i => i.id === gameState.selectedInventoryToken);
+    const token = T(tokenId);
+    return !!(invItem && token && invItem.type === token.type);
+}
+
+function updateKeyboardSelection() {
+    domTokenEls.forEach(el => {
+        if (el.dataset.tokenId === keyboardSelected) {
+            el.classList.add("keyboard-selected");
+        } else {
+            el.classList.remove("keyboard-selected");
+        }
+    });
+}
+
+// 键盘可达性：Tab 聚焦词块，Enter/Space 选中源词块，再 Tab 到目标词块按 Enter 交换。
+// 删除模式下 Enter 触发删除；词块库选中态下 Enter 填入/交换；Esc 取消。
+function onTokenKeydown(e, tokenId) {
+    if (gameState.turnInProgress) return;
+    const token = T(tokenId);
+    if (!token) return;
+
+    if (e.key === "Escape") {
+        if (keyboardSelected) { keyboardSelected = null; updateKeyboardSelection(); }
+        return;
+    }
+
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+
+    if (!token.swappable && !token.isEmpty) return;
+
+    // 删除模式：Enter/Space 触发删除
+    if (gameState.mode === "delete") {
+        handleDeleteClick(tokenId);
+        return;
+    }
+
+    // 词块库选中态：Enter/Space 填入/交换
+    if (gameState.selectedInventoryToken && hasCompatibleInventory(tokenId)) {
+        handleInventorySwapClick(tokenId);
+        return;
+    }
+
+    // 交换模式：Enter 选源 → Enter 选目标
+    if (gameState.mode !== "swap" || !token.swappable) return;
+
+    if (!keyboardSelected) {
+        if (parseInt(TV("swap-count")) <= 0) {
+            const scEl = document.getElementById("swap-count");
+            if (scEl) Anim.flash(scEl, "swap-count-shake", 500);
+            addLog("笔力不足，无法交换", "log-info");
+            return;
+        }
+        keyboardSelected = tokenId;
+        updateKeyboardSelection();
+        addLog("已选中「" + token.value + "」，Tab 到同色词块按 Enter 交换（Esc 取消）", "log-info");
+    } else if (keyboardSelected === tokenId) {
+        keyboardSelected = null;
+        updateKeyboardSelection();
+    } else {
+        const src = T(keyboardSelected);
+        if (src && src.type === token.type && (token.swappable || token.isEmpty)) {
+            // 先清空选中再执行交换：performSwap 内部会 render()，
+            // 若此时 keyboardSelected 仍非空，render 末尾的 updateKeyboardSelection
+            // 会给源词块残留 keyboard-selected 高亮。
+            const srcId = keyboardSelected;
+            keyboardSelected = null;
+            performSwap(srcId, tokenId);
+        } else {
+            addLog("类型不匹配，无法与「" + token.value + "」交换", "log-info");
+        }
+    }
+}
 
 function performSwap(idA, idB) {
     const tokenA = T(idA);
@@ -2458,8 +3034,8 @@ function performSwap(idA, idB) {
 function flashToken(tokenId) {
     const el = domTokenEls.find(e => e.dataset.tokenId === tokenId);
     if (el) {
-        el.classList.add("swap-landed");
-        setTimeout(() => el.classList.remove("swap-landed"), 400);
+        Anim.flash(el, "swap-landed", 280);
+        Anim.rippleAt(el);
     }
 }
 
@@ -2527,23 +3103,43 @@ function render() {
     const goldEl = document.getElementById("gold-value");
     if (goldEl) goldEl.textContent = gameState.gold;
 
-    // --- Swap counter ---
+    // --- Swap counter (in resource bar) ---
     const swapCountEl = document.getElementById("swap-count");
     const scToken = T("swap-count");
     swapCountEl.textContent = scToken.value;
+    swapCountEl.className = "resource-value";
     if (scToken.swappable) {
-        renderAsDraggable(swapCountEl, scToken);
+        swapCountEl.dataset.tokenId = "swap-count";
+        swapCountEl.style.cursor = "grab";
+        swapCountEl.classList.add("swappable-chip");
+        swapCountEl.setAttribute("tabindex", "0");
+        swapCountEl.setAttribute("role", "button");
+        swapCountEl.setAttribute("aria-label", "词块：" + scToken.value + "（笔力，可交换）");
+        if (swapCountEl._handler) swapCountEl.removeEventListener("mousedown", swapCountEl._handler);
+        swapCountEl._handler = (e) => onDragStart(e, swapCountEl);
+        swapCountEl.addEventListener("mousedown", swapCountEl._handler);
+        if (swapCountEl._keyHandler) swapCountEl.removeEventListener("keydown", swapCountEl._keyHandler);
+        swapCountEl._keyHandler = (e) => onTokenKeydown(e, "swap-count");
+        swapCountEl.addEventListener("keydown", swapCountEl._keyHandler);
     } else {
-        swapCountEl.className = "";
         swapCountEl.dataset.tokenId = "";
         swapCountEl.style.cursor = "default";
+        swapCountEl.classList.remove("swappable-chip");
+        swapCountEl.removeAttribute("tabindex");
+        swapCountEl.removeAttribute("role");
+        swapCountEl.removeAttribute("aria-label");
+        // 难度 2 下 swap-count 不可交换：给玩家一次明确提示（避免误以为是 bug）
+        if (!gameState._swapCountLockedNoted && gameState.difficulty >= 2) {
+            gameState._swapCountLockedNoted = true;
+            addLog("ℹ️ 当前难度下笔力不可被交换", "log-info");
+        }
     }
 
-    // --- Summary ---
+    // --- Summary（首场无内容时隐藏整张卡片，让出首屏空间）---
     const summaryArea = document.getElementById("summary-area");
     const summaryText = document.getElementById("summary-text");
     if (gameState.summaryTemplate) {
-        summaryArea.style.display = "block";
+        if (summaryArea) summaryArea.style.display = "";
         if (gameState.summaryTemplate === "A") {
             renderSentence(summaryText, [
                 "你", tok("summary-adj"), "地击败了", tok("summary-subject"),
@@ -2556,32 +3152,27 @@ function render() {
             ]);
         }
     } else {
-        summaryArea.style.display = "none";
+        // 首场：隐藏总结卡，首胜 generateSummary 后会设置 template 再显示
+        if (summaryArea) summaryArea.style.display = "none";
+        summaryText.innerHTML = "";
     }
 
-    // --- Environment ---
-    renderSentence(document.getElementById("environment-text"), [
-        "你站在", tok("env-adj"), tok("env-noun"), "之中",
-    ]);
-
-    // --- Battle ---
-    const battleArea = document.getElementById("battle-area");
-    const rewardArea = document.getElementById("reward-area");
+    // --- Narrative area (env + battle merged) ---
+    const narrativeArea = document.getElementById("narrative-area");
     const actionArea = document.getElementById("action-area");
+    const skillArea = document.getElementById("skill-area");
 
     if (gameState.phase === "map" || gameState.phase === "event") {
-        battleArea.style.display = "none";
+        narrativeArea.style.display = "none";
         actionArea.style.display = "none";
-        rewardArea.style.display = "none";
-    } else if (gameState.phase === "reward") {
-        // Reward phase handled by overlay, not inline
-        battleArea.style.display = "none";
-        actionArea.style.display = "none";
-        rewardArea.style.display = "none";
+        if (skillArea) skillArea.style.display = "none";
     } else {
-        battleArea.style.display = "block";
+        narrativeArea.style.display = "block";
         actionArea.style.display = "flex";
-        rewardArea.style.display = "none";
+
+        renderSentence(document.getElementById("environment-text"), [
+            "你站在", tok("env-adj"), tok("env-noun"), "之中",
+        ]);
 
         if (gameState.enemyFrozen) {
             renderSentence(document.getElementById("battle-text"), [
@@ -2594,6 +3185,12 @@ function render() {
                 "造成了", tok("enemy-damage"), "点伤害",
             ]);
         }
+    }
+
+    // --- Enemy name display in status ---
+    const enemyNameDisp = document.getElementById("enemy-name-display");
+    if (enemyNameDisp && T("enemy-name")) {
+        enemyNameDisp.textContent = T("enemy-name").value;
     }
 
     // --- Status bar ---
@@ -2610,6 +3207,7 @@ function render() {
     updatePressureVisuals();
     renderSkillArea();
     renderRelicBar();
+    updateKeyboardSelection();
 }
 
 function renderEnemyIntent() {
@@ -2626,7 +3224,10 @@ function renderEnemyIntent() {
     const info = INTENT_TYPES[intent.type];
 
     intentEl.innerHTML = "";
-    intentEl.style.borderColor = info.color;
+    // 用 data-type 让 CSS 按 intent 类型染色，不再内联 style 注入霓虹色
+    intentEl.setAttribute("data-type", info.type || intent.type);
+    intentEl.style.borderColor = ""; // 清掉旧内联残留
+    intentEl.title = info.label; // 悬停/读屏可看意图全称
 
     const iconSpan = document.createElement("span");
     iconSpan.className = "intent-icon";
@@ -2635,7 +3236,6 @@ function renderEnemyIntent() {
 
     const labelSpan = document.createElement("span");
     labelSpan.className = "intent-label";
-    labelSpan.style.color = info.color;
 
     let labelText = info.label;
     if (intent.type === "attack") labelText += " " + intent.value;
@@ -2671,6 +3271,15 @@ function renderSentence(container, parts) {
 function makeTokenSpan(token) {
     const span = document.createElement("span");
     span.dataset.tokenId = token.id;
+
+    // 键盘可达性：所有词块可 Tab 聚焦，Enter/Space 操作
+    span.setAttribute("tabindex", "0");
+    span.setAttribute("role", "button");
+    let _aria = "词块：" + token.value + "（" + tokenTypeLabel(token.type) + "）";
+    if (token.isEmpty) _aria += "，空槽";
+    else if (!token.swappable) _aria += "，已锁定";
+    span.setAttribute("aria-label", _aria);
+    span.addEventListener("keydown", (e) => onTokenKeydown(e, token.id));
 
     const hasInvSelection = !!gameState.selectedInventoryToken;
     const invItem = hasInvSelection ? gameState.inventory.find(i => i.id === gameState.selectedInventoryToken) : null;
@@ -2735,6 +3344,17 @@ function renderStatusEl(el, tokenId) {
     if (el._handler) el.removeEventListener("mousedown", el._handler);
     if (el._touchHandler) el.removeEventListener("touchstart", el._touchHandler);
     if (el._clickHandler) el.removeEventListener("click", el._clickHandler);
+    if (el._keyHandler) el.removeEventListener("keydown", el._keyHandler);
+
+    // 键盘可达性
+    el.setAttribute("tabindex", "0");
+    el.setAttribute("role", "button");
+    let _aria = "词块：" + token.value + "（" + tokenTypeLabel(token.type) + "）";
+    if (token.isEmpty) _aria += "，空槽";
+    else if (!token.swappable) _aria += "，已锁定";
+    el.setAttribute("aria-label", _aria);
+    el._keyHandler = (e) => onTokenKeydown(e, tokenId);
+    el.addEventListener("keydown", el._keyHandler);
 
     const hasInvSelection = !!gameState.selectedInventoryToken;
     const invItem = hasInvSelection ? gameState.inventory.find(i => i.id === gameState.selectedInventoryToken) : null;
@@ -2794,6 +3414,12 @@ function endTurn() {
     var btn = document.getElementById("btn-end-turn");
     btn.disabled = true;
 
+    // 结算期间视觉指示：容器加 resolving class，结束回合按钮显示"结算中"
+    const container = document.getElementById("game-container");
+    if (container) container.classList.add("resolving");
+    if (btn) btn.dataset.label = btn.textContent;
+    if (btn) btn.textContent = "结算中…";
+
     // Track whether battle ended during step execution
     var battleEnded = false;
 
@@ -2847,7 +3473,7 @@ function endTurn() {
         });
     }
 
-    // Step 2: Player attacks (basic weapon attack)
+    // Step 2: Player attacks (basic weapon attack) — with impact animation
     steps.push(function() {
         if (battleEnded) return;
         var playerDamage = calculatePlayerDamage();
@@ -2860,7 +3486,23 @@ function endTurn() {
         var vulnText = gameState.enemyVulnerable > 0 ? "（弱点暴露×2！）" : "";
         addLog("你用" + TV("player-weapon-adj") + "铁剑对" + TV("enemy-name") + "造成了" + playerDamage + "点伤害" + vulnText, "log-damage");
         render();
+
+        // Player attack visual: shake enemy status + floating number
+        const enemyStatusEl = document.getElementById("enemy-status");
+        if (enemyStatusEl) {
+            Anim.flash(enemyStatusEl, "player-hit", 400);
+        }
         showFloatingNumber(document.getElementById("enemy-hp"), playerDamage, "damage");
+
+        // Particles on big hits
+        if (playerDamage >= 8) {
+            const ehpEl = document.getElementById("enemy-hp");
+            if (ehpEl) {
+                const r = ehpEl.getBoundingClientRect();
+                Anim.spawnParticles(r.left + r.width / 2, r.top, 6, "var(--crimson)");
+            }
+        }
+
         if (checkEnemyDeath()) { battleEnded = true; battleWon(); return; }
     });
 
@@ -2949,20 +3591,41 @@ function endTurn() {
 
         gameState.turnInProgress = false;
         btn.disabled = false;
+        if (btn.dataset.label) { btn.textContent = btn.dataset.label; delete btn.dataset.label; }
+        const c = document.getElementById("game-container");
+        if (c) c.classList.remove("resolving");
     });
 
-    // Execute steps with delays
+    // Execute steps with variable delays for better rhythm
     var delay = 0;
-    var STEP_DELAY = 600;
-    steps.forEach(function(step) {
+    var STEP_DELAYS = [
+        400,   // after burn damage (quick)
+        800,   // after enemy attack (longer — let attack animation play)
+        700,   // after player attack
+        500,   // after field effects
+        400,   // after poison
+        300,   // after reset
+        200,   // final check
+    ];
+    steps.forEach(function(step, idx) {
         setTimeout(step, delay);
-        delay += STEP_DELAY;
+        delay += STEP_DELAYS[idx] || 500;
     });
 }
 
 function battleWon() {
-    showBanner("\ud83c\udf89 " + TV("enemy-name") + "被击败了！", "banner-victory");
+    showBanner("\ud83c\udf89 " + TV("enemy-name") + "被击败了！", "banner-victory", 2200);
     addLog("\ud83c\udf89 " + TV("enemy-name") + "被击败了！", "log-info");
+
+    // Victory particles burst from enemy status
+    const enemyEl = document.getElementById("enemy-status");
+    if (enemyEl) {
+        const rect = enemyEl.getBoundingClientRect();
+        Anim.spawnParticles(rect.left + rect.width / 2, rect.top + rect.height / 2, 12, "var(--gold)");
+        setTimeout(() => {
+            Anim.spawnParticles(rect.left + rect.width / 2, rect.top + rect.height / 2, 8, "var(--gold-bright)");
+        }, 200);
+    }
 
     // Trigger relic passives on battle win
     triggerRelics("on_battle_win");
@@ -3016,18 +3679,16 @@ function showRewardPanel() {
     var inkReward = getInkReward(diff);
     var enemyData = gameState.currentEnemyData;
 
-    // Apply gold + ink
-    gameState.gold += goldDropped;
-    var sc = T("swap-count");
-    sc.value = String(parseInt(sc.value) + inkReward);
+    // Store pending rewards (not applied until player clicks gold card)
+    gameState._pendingGold = goldDropped;
+    gameState._pendingInk = inkReward;
 
     // Show overlay
     var overlay = document.getElementById("reward-overlay");
     overlay.style.display = "flex";
 
     var basicEl = document.getElementById("reward-basic");
-    basicEl.innerHTML = '<span class="reward-gold">💰 金币 +' + goldDropped + '</span>（当前: ' + gameState.gold + '）<br>'
-        + '<span class="reward-ink">✒️ 笔力 +' + inkReward + '</span>（当前: ' + TV("swap-count") + '）<br>'
+    basicEl.innerHTML = '<span class="reward-ink">✒️ 笔力 +' + inkReward + '</span>（当前: ' + TV("swap-count") + '）<br>'
         + '✦ 法力已回满（' + gameState.maxMana + '/' + gameState.maxMana + '）';
 
     var choicesEl = document.getElementById("reward-choices");
@@ -3036,6 +3697,10 @@ function showRewardPanel() {
     continueBtn.style.display = "none";
 
     gameState._rewardChosen = false;
+    gameState._goldCollected = false;
+
+    // Gold card (common to all battle types — player must click to collect)
+    addGoldCard(choicesEl, goldDropped);
 
     if (diff === "boss") {
         showBossRewardChoices(choicesEl);
@@ -3046,6 +3711,45 @@ function showRewardPanel() {
     }
 
     render();
+}
+
+// Gold collection card
+function addGoldCard(container, amount) {
+    var card = document.createElement("div");
+    card.className = "reward-card card-gold";
+    card.innerHTML = '<span class="card-icon">💰</span>'
+        + '<span class="card-name">金币 x' + amount + '</span>'
+        + '<span class="card-desc">点击收取</span>';
+    card.addEventListener("click", function() {
+        if (gameState._goldCollected) return;
+        gameState._goldCollected = true;
+        gameState.gold += amount;
+        var sc = T("swap-count");
+        sc.value = String(parseInt(sc.value) + gameState._pendingInk);
+        addLog("收取 💰" + amount + " 金币，✒️ 笔力 +" + gameState._pendingInk, "log-info");
+        card.style.opacity = "1";
+        card.style.borderColor = "#f0c040";
+        card.querySelector(".card-desc").textContent = "已收取";
+        // 金币收完：对其余奖励卡脉冲引导"再选一个"
+        var choicesEl = document.getElementById("reward-choices");
+        if (choicesEl) {
+            choicesEl.querySelectorAll(".reward-card:not(.card-gold)").forEach(c => {
+                if (!c.dataset.chosen) c.classList.add("pulse-hint");
+            });
+        }
+        checkRewardReady();
+        render();
+    });
+    container.appendChild(card);
+}
+
+function checkRewardReady() {
+    // 选中奖励后清除所有脉冲引导
+    var choicesEl = document.getElementById("reward-choices");
+    if (choicesEl) choicesEl.querySelectorAll(".reward-card.pulse-hint").forEach(c => c.classList.remove("pulse-hint"));
+    if (gameState._goldCollected && gameState._rewardChosen) {
+        document.getElementById("reward-continue").style.display = "inline-block";
+    }
 }
 
 // --- Normal battle: loot token + skip option ---
@@ -3064,10 +3768,9 @@ function showNormalRewardChoices(container, enemyData) {
         gameState._rewardChosen = true;
         addToInventory(loot.type, loot.value);
         addLog('收取战利品：「' + loot.value + '」加入词块库', "log-info");
-        document.getElementById("reward-continue").style.display = "inline-block";
-        container.querySelectorAll(".reward-card").forEach(function(c) { c.style.opacity = "0.4"; });
         card1.style.opacity = "1";
         card1.style.borderColor = "#f0c040";
+        checkRewardReady();
     });
     container.appendChild(card1);
 
@@ -3083,10 +3786,9 @@ function showNormalRewardChoices(container, enemyData) {
         var sc = T("swap-count");
         sc.value = String(parseInt(sc.value) + 1);
         addLog("放弃了战利品词块，换成 +1 笔力", "log-info");
-        document.getElementById("reward-continue").style.display = "inline-block";
-        container.querySelectorAll(".reward-card").forEach(function(c) { c.style.opacity = "0.4"; });
         card2.style.opacity = "1";
         card2.style.borderColor = "#f0c040";
+        checkRewardReady();
     });
     container.appendChild(card2);
 }
@@ -3133,10 +3835,9 @@ function showEliteRewardChoices(container) {
             if (gameState._rewardChosen) return;
             gameState._rewardChosen = true;
             addSkillToPlayer(skillId);
-            document.getElementById("reward-continue").style.display = "inline-block";
-            container.querySelectorAll(".reward-card").forEach(function(c) { c.style.opacity = "0.4"; });
             card.style.opacity = "1";
             card.style.borderColor = "#f0c040";
+            checkRewardReady();
         });
         container.appendChild(card);
     });
@@ -3175,10 +3876,9 @@ function showBossRewardChoices(container) {
             if (gameState._rewardChosen) return;
             gameState._rewardChosen = true;
             acquireRelic(relicId);
-            document.getElementById("reward-continue").style.display = "inline-block";
-            container.querySelectorAll(".reward-card").forEach(function(c) { c.style.opacity = "0.4"; });
             card.style.opacity = "1";
             card.style.borderColor = "#f0c040";
+            checkRewardReady();
         });
         container.appendChild(card);
     });
@@ -3200,9 +3900,10 @@ function addSkillToPlayer(skillId) {
 }
 
 function completeReward() {
-    if (!gameState._rewardChosen) return;
+    if (!gameState._goldCollected || !gameState._rewardChosen) return;
     document.getElementById("reward-overlay").style.display = "none";
     gameState._rewardChosen = false;
+    gameState._goldCollected = false;
 
     if (gameState.map) {
         if (gameState.currentLayer >= gameState.map.length) {
@@ -3318,9 +4019,24 @@ function gameOver(won) {
         showBanner("💀 战败…", "banner-defeat");
     }
 
+    // Dramatic pause before showing game over screen
     setTimeout(function() {
-        overlay.style.display = "flex";
-        requestAnimationFrame(function() { overlay.classList.add("visible"); });
+        if (!won) {
+            screenShake(true); // heavy shake on defeat
+        }
+        setTimeout(function() {
+            overlay.style.display = "flex";
+            requestAnimationFrame(function() { overlay.classList.add("visible"); });
+            // Particles on the game over screen
+            if (won) {
+                const titleEl = document.getElementById("game-over-title");
+                if (titleEl) {
+                    const rect = titleEl.getBoundingClientRect();
+                    setTimeout(() => Anim.spawnParticles(rect.left + rect.width / 2, rect.top + rect.height / 2, 15, "var(--gold)"), 300);
+                    setTimeout(() => Anim.spawnParticles(rect.left + rect.width / 2, rect.top + rect.height / 2, 10, "var(--gold-bright)"), 600);
+                }
+            }
+        }, won ? 200 : 500);
     }, 800);
 }
 
@@ -3345,9 +4061,21 @@ function startGame() {
     document.getElementById("effects-bar").innerHTML = "";
     document.getElementById("banner-overlay").innerHTML = "";
     document.getElementById("btn-end-turn").disabled = false;
+    {
+        const _btn = document.getElementById("btn-end-turn");
+        if (_btn && _btn.dataset.label) { _btn.textContent = _btn.dataset.label; delete _btn.dataset.label; }
+    }
+    document.getElementById("game-container").classList.remove("resolving");
     document.getElementById("game-container").style.filter = "";
-    document.getElementById("map-overlay").style.display = "none";
-    document.getElementById("event-overlay").style.display = "none";
+    // 统一隐藏所有 overlay，避免上一局残留浮层
+    ["map-overlay", "event-overlay", "inventory-overlay", "reward-overlay", "tutorial-overlay"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = "none";
+    });
+    // 清理键盘选中态 / 词块库选中态
+    keyboardSelected = null;
+    const selHint = document.getElementById("inv-selection-hint");
+    if (selHint) selHint.style.display = "none";
 
     const env = ENVIRONMENTS[Math.floor(Math.random() * ENVIRONMENTS.length)];
     const rules = DIFFICULTY_RULES[1]; // Start at difficulty 1
@@ -3444,6 +4172,61 @@ function startGame() {
 }
 
 // =============================================================
+// LOG COLLAPSE
+// =============================================================
+
+function toggleLog() {
+    const logArea = document.getElementById("log-area");
+    if (logArea) {
+        logArea.classList.toggle("log-collapsed");
+    }
+}
+
+// =============================================================
+// 新手引导（首场战斗显示一次）
+// =============================================================
+
+function showTutorial() {
+    const overlay = document.getElementById("tutorial-overlay");
+    if (overlay) overlay.style.display = "flex";
+}
+
+function dismissTutorial() {
+    const overlay = document.getElementById("tutorial-overlay");
+    if (overlay) overlay.style.display = "none";
+}
+
+// =============================================================
 // START
 // =============================================================
+
+// 全局键盘：Esc 取消键盘选中 / 词块库选中态（无需聚焦在词块上）
+document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    let changed = false;
+    if (keyboardSelected) { keyboardSelected = null; updateKeyboardSelection(); changed = true; }
+    if (gameState.selectedInventoryToken) {
+        gameState.selectedInventoryToken = null;
+        updateInvSelectionHint();
+        changed = true;
+    }
+    if (changed) render();
+});
+
+// 点击词块库 overlay 背景取消选择并关闭浮层（脚本在 body 末尾，DOM 已就绪）
+(() => {
+    const overlay = document.getElementById("inventory-overlay");
+    if (overlay && !overlay._bgBound) {
+        overlay._bgBound = true;
+        overlay.addEventListener("click", (e) => {
+            if (e.target === overlay) {
+                gameState.selectedInventoryToken = null;
+                updateInvSelectionHint();
+                overlay.style.display = "none";
+                render();
+            }
+        });
+    }
+})();
+
 startGame();

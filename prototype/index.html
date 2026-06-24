@@ -4,70 +4,79 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>词·换 — Word Swap Roguelike 原型</title>
+    <!-- 书法字体：让 CSS 中已声明的 "LXGW WenKai" 真正生效，否则会 fallback 到系统 serif，
+         瓦解"文字为主"的羊皮卷质感。LXGW WenKai 不在 Google Fonts，用其官方 webfont CDN。 -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont/style.css">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div id="game-container">
+        <!-- Title bar: slim, elegant -->
         <header id="game-header">
             <h1>词 · 换</h1>
-            <div id="header-right">
-                <div id="gold-display">💰 <span id="gold-value">0</span></div>
-                <div id="pressure-bar">
-                    <span class="pressure-label">墨渍</span>
-                    <div class="pressure-track"><div class="pressure-fill"></div></div>
-                    <span class="pressure-value">0/20</span>
-                </div>
-                <div id="swap-counter">笔力：<span id="swap-count">5</span></div>
-            </div>
         </header>
 
-        <section id="summary-area" class="text-area" style="display:none;">
-            <div class="area-label">上一场总结</div>
-            <p id="summary-text"></p>
+        <!-- Resource bar: 笔力 + 法力 + 金币, always visible, slim -->
+        <div id="resource-bar">
+            <div id="swap-counter" class="resource-item">
+                <span class="resource-icon">🖊️</span>
+                <span class="resource-label">笔力</span>
+                <span id="swap-count" class="resource-value">5</span>
+            </div>
+            <div id="mana-display" class="resource-item">
+                <span class="resource-icon">✦</span>
+                <span class="resource-label">法力</span>
+                <span id="mana-value" class="resource-value">0</span>
+                <span class="resource-sep">/</span>
+                <span id="mana-max">10</span>
+                <span class="mana-regen">(+<span id="mana-regen">3</span>)</span>
+            </div>
+            <div id="pressure-bar" class="resource-item">
+                <span class="resource-icon">💧</span>
+                <span class="resource-label">墨渍</span>
+                <div class="pressure-track"><div class="pressure-fill"></div></div>
+                <span class="pressure-value">0/20</span>
+            </div>
+            <div id="gold-display" class="resource-item">
+                <span class="resource-icon">💰</span>
+                <span id="gold-value">0</span>
+            </div>
+        </div>
+
+        <!-- Summary: always visible, unique card style -->
+        <section id="summary-area" class="summary-card">
+            <div class="summary-label">⟨ 上一场 ⟩</div>
+            <p id="summary-text">首场战斗 — 胜利后将在此留下记录</p>
         </section>
 
-        <section id="environment-area" class="text-area">
-            <div class="area-label">环境</div>
+        <!-- Hero narrative area: env + battle merged -->
+        <section id="narrative-area" class="narrative-card">
             <p id="environment-text"></p>
-        </section>
-
-        <section id="battle-area" class="text-area">
-            <div class="area-label">战斗</div>
+            <hr class="narrative-divider">
             <p id="battle-text"></p>
         </section>
 
-        <section id="reward-area" class="text-area" style="display:none;">
-            <div class="area-label">战利品</div>
-            <p id="reward-text"></p>
-            <div class="reward-actions">
-                <button onclick="collectReward()">收取战利品，进入下一场</button>
-            </div>
-        </section>
-
+        <!-- Status: player vs enemy side by side，两侧行数对位、语义对称 -->
         <section id="status-area">
-            <div id="player-status">
-                <span class="status-label">你：</span>
-                <span class="hp-bar">❤️ <span id="player-hp" class="token token-number"></span></span>
-                <span class="equip">⚔️ <span id="player-weapon-adj" class="token token-adjective"></span><span id="player-weapon-noun">铁剑</span></span>
+            <div id="player-status" class="status-side">
+                <div class="status-name">你</div>
+                <div class="status-row status-hp">❤️ <span id="player-hp" class="token token-number"></span></div>
+                <div class="status-row status-equip">⚔️ <span id="player-weapon-adj" class="token token-adjective"></span><span id="player-weapon-noun" class="weapon-noun">铁剑</span></div>
             </div>
-            <div id="enemy-status">
-                <span class="status-label">敌人：</span>
-                <span class="hp-bar">💀 <span id="enemy-hp" class="token token-number"></span></span>
-                <span id="enemy-intent" class="intent-display"></span>
+            <div class="status-vs">VS</div>
+            <div id="enemy-status" class="status-side">
+                <div class="status-name" id="enemy-name-display">敌人</div>
+                <div class="status-row status-hp">💀 <span id="enemy-hp" class="token token-number"></span></div>
+                <div class="status-row status-intent-wrap"><span id="enemy-intent" class="intent-display"></span></div>
             </div>
         </section>
 
         <!-- Buff/Debuff effect bar -->
         <section id="effects-bar"></section>
 
-        <!-- Skill bar -->
+        <!-- Skill bar (no more mana display here, it's in resource bar) -->
         <section id="skill-area" style="display:none;">
-            <div id="mana-display">
-                <span class="mana-icon">✦</span>
-                <span class="mana-label">法力</span>
-                <span id="mana-value">0</span>/<span id="mana-max">10</span>
-                <span class="mana-regen">(+<span id="mana-regen">3</span>/回合)</span>
-            </div>
             <div id="skill-slots">
                 <!-- Skill buttons are rendered dynamically -->
             </div>
@@ -75,10 +84,11 @@
 
         <section id="action-area">
             <div id="mode-buttons">
-                <button id="btn-mode-delete" class="mode-btn" onclick="toggleMode('delete')">✕ 删除</button>
+                <button id="btn-mode-insert" class="mode-btn" onclick="toggleInsert()" aria-label="添加模式：从词块库选词填入空槽">＋ 添加</button>
+                <button id="btn-mode-delete" class="mode-btn" onclick="toggleMode('delete')" aria-label="删除模式：抹除词块腾出空槽，消耗2笔力4墨渍">✕ 删除<span class="mode-cost">2笔力</span></button>
             </div>
-            <button id="btn-end-turn" onclick="endTurn()">结束回合</button>
             <button id="btn-inventory" onclick="toggleInventory()">📦 词块库 (<span id="inv-count">0</span>)</button>
+            <button id="btn-end-turn" class="btn-primary" onclick="endTurn()">⚔️ 结束回合</button>
         </section>
 
         <!-- Inventory overlay -->
@@ -91,9 +101,18 @@
             </div>
         </div>
 
+        <!-- 选中词块后的常驻提示条（提供显式取消出口） -->
+        <div id="inv-selection-hint" style="display:none;">
+            <span id="inv-selection-text"></span>
+            <button id="inv-selection-cancel" onclick="cancelInventorySelection()" aria-label="取消选择">取消选择 (Esc)</button>
+        </div>
+
         <section id="log-area">
-            <div class="area-label">战斗日志</div>
-            <div id="battle-log"></div>
+            <div class="log-header" onclick="toggleLog()">
+                <span class="area-label">战斗日志</span>
+                <span class="log-toggle-icon">▲</span>
+            </div>
+            <div id="battle-log" class="log-body"></div>
         </section>
 
         <!-- Fullscreen banner for combos/events -->
@@ -111,6 +130,7 @@
         <div id="event-overlay" style="display:none;">
             <div id="event-panel">
                 <h2 id="event-title"></h2>
+                <p class="event-hint">💡 描述与选项中的词块可拖拽交换，改变结果后再做选择</p>
                 <p id="event-description"></p>
                 <div id="event-choices"></div>
             </div>
@@ -120,9 +140,30 @@
         <div id="reward-overlay" style="display:none;">
             <div id="reward-panel">
                 <h2 id="reward-title">战斗胜利</h2>
+                <p class="reward-hint">① 点击金币卡收取 → ② 点击一个奖励卡选择</p>
                 <div id="reward-basic"></div>
                 <div id="reward-choices"></div>
                 <button id="reward-continue" onclick="completeReward()">继续前进</button>
+            </div>
+        </div>
+
+        <!-- 新手引导浮层（首场战斗显示一次） -->
+        <div id="tutorial-overlay" style="display:none;">
+            <div id="tutorial-panel" role="dialog" aria-modal="true" aria-label="如何游玩">
+                <h2>如何游玩</h2>
+                <div class="tutorial-content">
+                    <p class="tutorial-intro">屏幕上所有<span class="tut-token">带框的文字</span>都是「词块」，可以<strong>拖拽交换</strong>。</p>
+                    <ul class="tutorial-list">
+                        <li><strong>拖拽两个同色词块</strong>交换位置，战斗语义立即改变并结算</li>
+                        <li><span class="res-ink">🖊️ 笔力</span>：交换 / 删除 / 填入都消耗它，<em>跨战斗积攒，省着用</em></li>
+                        <li><span class="res-mana">✦ 法力</span>：施放技能消耗，每回合自动回复</li>
+                        <li><span class="res-pressure">💧 墨渍</span>：交换累积的压力，过高会腐蚀、锁定词块</li>
+                        <li><strong>三种操作</strong>：交换（默认拖拽）／ <span class="res-crimson">✕ 删除</span>（抹除词块腾空槽）／ <span class="res-ink">＋ 添加</span>（从词块库填入空槽）</li>
+                        <li>敌人头像旁的<strong>意图图标</strong>＝下回合要做什么，针对性应对</li>
+                    </ul>
+                    <p class="tutorial-tip">💡 也可用键盘：Tab 聚焦词块，Enter 选中源词块，再 Tab 到目标词块按 Enter 交换。</p>
+                </div>
+                <button id="tutorial-dismiss" onclick="dismissTutorial()">明白了，开始</button>
             </div>
         </div>
 
